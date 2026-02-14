@@ -1,0 +1,5 @@
+Flask>=2.0
+pytest>=6.0
+werkzeug>=2.0 # For secure_filename
+python-dotenv>=0.15 # Optional, for managing secrets like API keys
+SQLAlchemy>=1.4 # For Q4 database integration 
