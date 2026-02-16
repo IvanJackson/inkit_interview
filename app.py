@@ -2,7 +2,7 @@
 
 import os
 import signal
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 
 from config import config_by_name
 
@@ -34,6 +34,11 @@ def create_app(config_name=None):
 
     # Register error handlers
     _register_error_handlers(app)
+
+    # Serve frontend
+    @app.route("/")
+    def index():
+        return send_from_directory("static", "index.html")
 
     # @app.route('/shutdown', methods=['POST'])
     # def shutdown():
@@ -130,10 +135,16 @@ def _register_error_handlers(app):
             error_type="api_error",
             code="internal_error",
         )), 500
-    
+
+    @app.errorhandler(503)
+    def service_unavailable(e):
+        return jsonify(format_error_response(
+            message="Too many active streaming connections. Please try again shortly.",
+            error_type="api_error",
+            code="streaming_capacity_exceeded",
+        )), 503
 
 
-    
 
 
 # Application entry point

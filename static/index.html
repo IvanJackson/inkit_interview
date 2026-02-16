@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visual Assistant</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    .header {
+      padding: 16px 24px;
+      background: #16213e;
+      border-bottom: 1px solid #2a2a4a;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+    }
+    .header .dot {
+      width: 8px; height: 8px;
+      background: #4ade80;
+      border-radius: 50%;
+    }
+
+    /* Chat area */
+    .chat-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Messages */
+    .message {
+      max-width: 720px;
+      width: 100%;
+      margin: 0 auto;
+      display: flex;
+      gap: 12px;
+    }
+    .message.user { justify-content: flex-end; }
+    .message.assistant { justify-content: flex-start; }
+
+    .message .avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .message.user .avatar { background: #3b82f6; order: 2; }
+    .message.assistant .avatar { background: #8b5cf6; }
+    .message.system .avatar { background: #6b7280; }
+
+    .message .bubble {
+      padding: 12px 16px;
+      border-radius: 16px;
+      max-width: 80%;
+      line-height: 1.5;
+      font-size: 14px;
+      word-wrap: break-word;
+    }
+    .message.user .bubble {
+      background: #3b82f6;
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+    .message.assistant .bubble {
+      background: #2a2a4a;
+      color: #e0e0e0;
+      border-bottom-left-radius: 4px;
+    }
+    .message.system .bubble {
+      background: transparent;
+      color: #9ca3af;
+      font-style: italic;
+      text-align: center;
+      max-width: 100%;
+    }
+
+    .bubble .label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+      opacity: 0.7;
+    }
+
+    .bubble img.preview {
+      max-width: 280px;
+      max-height: 200px;
+      border-radius: 8px;
+      margin-top: 8px;
+      display: block;
+    }
+
+    .bubble .meta {
+      font-size: 11px;
+      opacity: 0.5;
+      margin-top: 6px;
+    }
+
+    /* Loading indicator */
+    .typing {
+      display: flex;
+      gap: 4px;
+      padding: 4px 0;
+    }
+    .typing span {
+      width: 6px; height: 6px;
+      background: #8b5cf6;
+      border-radius: 50%;
+      animation: bounce 1.4s infinite ease-in-out;
+    }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0); }
+      40% { transform: scale(1); }
+    }
+
+    /* Drag overlay */
+    .drag-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(59, 130, 246, 0.15);
+      border: 3px dashed #3b82f6;
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      color: #3b82f6;
+      pointer-events: none;
+    }
+    .drag-overlay.active { display: flex; }
+
+    /* Input area */
+    .input-area {
+      padding: 16px 24px;
+      background: #16213e;
+      border-top: 1px solid #2a2a4a;
+    }
+    .input-container {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    /* Staged image preview */
+    .staged-image {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #2a2a4a;
+      border-radius: 8px 8px 0 0;
+      font-size: 13px;
+    }
+    .staged-image.active { display: flex; }
+    .staged-image img {
+      width: 40px; height: 40px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+    .staged-image .name {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: #93c5fd;
+    }
+    .staged-image .remove {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      font-size: 18px;
+      padding: 0 4px;
+    }
+    .staged-image .remove:hover { color: #ef4444; }
+
+    /* Input row */
+    .input-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      background: #2a2a4a;
+      border-radius: 12px;
+      padding: 8px 12px;
+    }
+    .staged-image.active + .input-row {
+      border-radius: 0 0 12px 12px;
+    }
+
+    .attach-btn {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      font-size: 20px;
+      padding: 4px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .attach-btn:hover { color: #3b82f6; background: rgba(59,130,246,0.1); }
+
+    #message-input {
+      flex: 1;
+      background: none;
+      border: none;
+      color: #e0e0e0;
+      font-size: 14px;
+      font-family: inherit;
+      resize: none;
+      outline: none;
+      min-height: 24px;
+      max-height: 120px;
+      line-height: 1.5;
+    }
+    #message-input::placeholder { color: #6b7280; }
+
+    .send-btn {
+      background: #3b82f6;
+      border: none;
+      color: #fff;
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .send-btn:hover { background: #2563eb; }
+    .send-btn:disabled { background: #4b5563; cursor: not-allowed; }
+
+    #file-input { display: none; }
+
+    /* Scrollbar */
+    .chat-area::-webkit-scrollbar { width: 6px; }
+    .chat-area::-webkit-scrollbar-track { background: transparent; }
+    .chat-area::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="dot"></div>
+    <h1>Visual Assistant</h1>
+  </div>
+
+  <div class="chat-area" id="chat-area">
+    <div class="message system">
+      <div class="bubble">
+        Upload an image to get started. You can drag & drop an image, attach one with the
+        clip icon, or type a question after uploading.
+      </div>
+    </div>
+  </div>
+
+  <div class="drag-overlay" id="drag-overlay">Drop image here</div>
+
+  <div class="input-area">
+    <div class="input-container">
+      <div class="staged-image" id="staged-image">
+        <img id="staged-preview" src="" alt="preview">
+        <span class="name" id="staged-name"></span>
+        <button class="remove" onclick="clearStagedImage()">&times;</button>
+      </div>
+      <div class="input-row">
+        <button class="attach-btn" onclick="document.getElementById('file-input').click()" title="Attach image">
+          &#x1F4CE;
+        </button>
+        <textarea id="message-input" placeholder="Type a message..." rows="1"></textarea>
+        <button class="send-btn" id="send-btn" onclick="sendMessage()" title="Send">
+          &#x27A4;
+        </button>
+      </div>
+      <input type="file" id="file-input" accept="image/jpeg,image/png,image/gif,image/webp">
+    </div>
+  </div>
+
+<script>
+  // State
+  let stagedFile = null;
+  let sending = false;
+
+  // DOM refs
+  const chatArea = document.getElementById('chat-area');
+  const messageInput = document.getElementById('message-input');
+  const sendBtn = document.getElementById('send-btn');
+  const fileInput = document.getElementById('file-input');
+  const stagedImageEl = document.getElementById('staged-image');
+  const stagedPreview = document.getElementById('staged-preview');
+  const stagedName = document.getElementById('staged-name');
+  const dragOverlay = document.getElementById('drag-overlay');
+
+  // Auto-resize textarea
+  messageInput.addEventListener('input', () => {
+    messageInput.style.height = 'auto';
+    messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
+  });
+
+  // Enter to send (shift+enter for newline)
+  messageInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // File input change
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      stageFile(e.target.files[0]);
+    }
+  });
+
+  // Drag and drop
+  let dragCounter = 0;
+
+  document.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragCounter++;
+    dragOverlay.classList.add('active');
+  });
+
+  document.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter === 0) dragOverlay.classList.remove('active');
+  });
+
+  document.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+
+  document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    dragOverlay.classList.remove('active');
+    if (e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.type.startsWith('image/')) {
+        stageFile(file);
+      }
+    }
+  });
+
+  function stageFile(file) {
+    stagedFile = file;
+    stagedName.textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      stagedPreview.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+    stagedImageEl.classList.add('active');
+    messageInput.focus();
+  }
+
+  function clearStagedImage() {
+    stagedFile = null;
+    stagedImageEl.classList.remove('active');
+    stagedPreview.src = '';
+    stagedName.textContent = '';
+    fileInput.value = '';
+  }
+
+  // Add message to chat
+  function addMessage(type, content, opts = {}) {
+    const msg = document.createElement('div');
+    msg.className = `message ${type}`;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.textContent = type === 'user' ? 'U' : type === 'assistant' ? 'A' : '';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+
+    if (opts.label) {
+      const label = document.createElement('div');
+      label.className = 'label';
+      label.textContent = opts.label;
+      bubble.appendChild(label);
+    }
+
+    if (opts.imageDataUrl) {
+      const img = document.createElement('img');
+      img.className = 'preview';
+      img.src = opts.imageDataUrl;
+      img.alt = 'uploaded image';
+      bubble.appendChild(img);
+    }
+
+    if (content) {
+      const text = document.createElement('div');
+      text.textContent = content;
+      bubble.appendChild(text);
+    }
+
+    if (opts.meta) {
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = opts.meta;
+      bubble.appendChild(meta);
+    }
+
+    if (type !== 'system') msg.appendChild(avatar);
+    msg.appendChild(bubble);
+
+    chatArea.appendChild(msg);
+    chatArea.scrollTop = chatArea.scrollHeight;
+    return msg;
+  }
+
+  function addTypingIndicator() {
+    const msg = document.createElement('div');
+    msg.className = 'message assistant';
+    msg.id = 'typing-indicator';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.textContent = 'A';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+
+    const typing = document.createElement('div');
+    typing.className = 'typing';
+    typing.innerHTML = '<span></span><span></span><span></span>';
+    bubble.appendChild(typing);
+
+    msg.appendChild(avatar);
+    msg.appendChild(bubble);
+    chatArea.appendChild(msg);
+    chatArea.scrollTop = chatArea.scrollHeight;
+  }
+
+  function removeTypingIndicator() {
+    const el = document.getElementById('typing-indicator');
+    if (el) el.remove();
+  }
+
+  // Extract text from different response formats
+  function extractVisionText(response) {
+    try {
+      return response.analysis.output[0].content[0].text;
+    } catch { return null; }
+  }
+
+  function extractChatText(response) {
+    try {
+      // Could be top-level (from /chat) or nested in chat_response (from /upload hybrid)
+      const obj = response.chat_response || response;
+      return obj.choices[0].message.content;
+    } catch { return null; }
+  }
+
+  // Create an empty assistant message bubble for streaming into
+  function addStreamingBubble() {
+    const msg = document.createElement('div');
+    msg.className = 'message assistant';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.textContent = 'A';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+
+    const text = document.createElement('div');
+    text.className = 'stream-text';
+    text.textContent = '';
+    bubble.appendChild(text);
+
+    msg.appendChild(avatar);
+    msg.appendChild(bubble);
+    chatArea.appendChild(msg);
+    chatArea.scrollTop = chatArea.scrollHeight;
+    return text;
+  }
+
+  // Fallback: non-streaming chat via /chat endpoint
+  async function fallbackChat(prompt, imageId) {
+    const body = { prompt };
+    if (imageId) body.image_id = imageId;
+
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      credentials: 'include'
+    });
+
+    removeTypingIndicator();
+
+    if (!res.ok) {
+      try {
+        const errData = await res.json();
+        addMessage('assistant', errData.error?.message || `Error ${res.status}`, { label: 'Error' });
+      } catch {
+        addMessage('assistant', `Error ${res.status}`, { label: 'Error' });
+      }
+      return;
+    }
+
+    const data = await res.json();
+    const text = extractChatText(data);
+    if (text) {
+      addMessage('assistant', text);
+    }
+  }
+
+  // Stream chat response via SSE (fetch + ReadableStream)
+  // Falls back to /chat if streaming fails (FR-016, FR-017)
+  // Supports optional imageId for streaming image analysis responses
+  async function streamChat(prompt, imageId) {
+    const body = { prompt };
+    if (imageId) body.image_id = imageId;
+
+    let res;
+    try {
+      res = await fetch('/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        credentials: 'include'
+      });
+    } catch {
+      // Network error connecting to stream — fall back to /chat
+      await fallbackChat(prompt, imageId);
+      return;
+    }
+
+    // Non-streaming error responses come back as JSON — fall back
+    if (!res.ok || !res.headers.get('content-type')?.includes('text/event-stream')) {
+      await fallbackChat(prompt, imageId);
+      return;
+    }
+
+    removeTypingIndicator();
+    const streamEl = addStreamingBubble();
+
+    try {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE lines
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const payload = line.slice(6);
+          if (payload === '[DONE]') continue;
+
+          try {
+            const chunk = JSON.parse(payload);
+            const delta = chunk.choices?.[0]?.delta;
+            if (delta?.content) {
+              streamEl.textContent += delta.content;
+              chatArea.scrollTop = chatArea.scrollHeight;
+            }
+          } catch { /* skip malformed chunks */ }
+        }
+      }
+
+      // If stream completed but no content was rendered, something went wrong
+      if (!streamEl.textContent) {
+        streamEl.parentElement.parentElement.remove();
+        await fallbackChat(prompt, imageId);
+      }
+    } catch {
+      // Error during streaming read — display what we have or fall back
+      if (!streamEl.textContent) {
+        streamEl.parentElement.parentElement.remove();
+        await fallbackChat(prompt, imageId);
+      }
+      // If we already have partial content, keep it and show an error note
+      else {
+        addMessage('assistant', 'Stream interrupted. Partial response shown above.', { label: 'Warning' });
+      }
+    }
+  }
+
+  // Send message
+  async function sendMessage() {
+    if (sending) return;
+
+    const text = messageInput.value.trim();
+    const file = stagedFile;
+
+    if (!text && !file) return;
+
+    sending = true;
+    sendBtn.disabled = true;
+
+    // Show user message
+    let userContent = text || '';
+    let imageDataUrl = null;
+    if (file) {
+      imageDataUrl = stagedPreview.src;
+    }
+    addMessage('user', userContent, {
+      imageDataUrl: imageDataUrl,
+      meta: file ? file.name : null
+    });
+
+    // Clear input
+    messageInput.value = '';
+    messageInput.style.height = 'auto';
+    clearStagedImage();
+
+    // Show typing indicator
+    addTypingIndicator();
+
+    try {
+      let response;
+
+      if (file) {
+        // Has image: upload first, then stream the analysis
+        const formData = new FormData();
+        formData.append('image', file);
+
+        const res = await fetch('/upload', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
+        });
+        response = await res.json();
+
+        if (!res.ok) {
+          removeTypingIndicator();
+          const errMsg = response.error?.message || `Error ${res.status}`;
+          addMessage('assistant', errMsg, { label: 'Error' });
+        } else {
+          // Show upload metadata
+          addMessage('system', `Image uploaded: ${response.width}x${response.height} ${response.format}`, {
+            meta: `Image ID: ${response.image_id}`
+          });
+
+          // Stream the vision analysis word-by-word
+          const analysisPrompt = text || 'Describe what you see in this image';
+          await streamChat(analysisPrompt, response.image_id);
+        }
+
+      } else {
+        // Text only: use /chat/stream (SSE)
+        await streamChat(text);
+      }
+
+    } catch (err) {
+      removeTypingIndicator();
+      addMessage('assistant', `Connection error: ${err.message}`, { label: 'Error' });
+    }
+
+    sending = false;
+    sendBtn.disabled = false;
+    messageInput.focus();
+  }
+</script>
+
+</body>
+</html>

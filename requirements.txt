@@ -5,3 +5,4 @@ python-dotenv>=0.15 # Optional, for managing secrets like API keys
 SQLAlchemy>=1.4 # For Q4 database integration
 Pillow>=10.0 # For image validation, metadata extraction, corruption detection
 Flask-Limiter>=3.0 # For rate limiting
+requests>=2.28 # For validation and demo scripts

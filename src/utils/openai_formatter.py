@@ -1,13 +1,15 @@
 """OpenAI-compatible response formatting utilities.
 
-Two distinct formats are used to match the actual OpenAI API:
+Three distinct formats are used to match the actual OpenAI API:
 - Vision Analysis: OpenAI Responses API format (output array with message objects)
 - Chat Completion: OpenAI Chat Completions API format (choices array with message objects)
+- Chat Completion Streaming: SSE chunks with delta objects instead of message objects
 """
 
+import json
 import time
 import uuid
-from typing import Optional
+from typing import Generator, Optional
 
 
 def format_chat_completion(
@@ -214,3 +216,123 @@ def format_photo_relevance_prompt(prompt: str) -> dict:
         prompt_tokens=50,
         completion_tokens=30,
     )
+
+
+# --- Streaming (SSE) formatters ---
+
+
+def format_stream_chunk(
+    chunk_id: str,
+    delta: dict,
+    created: int,
+    model: str = "gpt-4-vision-preview",
+    finish_reason: Optional[str] = None,
+    usage: Optional[dict] = None,
+) -> str:
+    """Format a single streaming chunk as an SSE data line.
+
+    Args:
+        chunk_id: Shared ID across all chunks in one completion
+        delta: The delta object (role, content, or empty)
+        created: Unix timestamp shared across chunks
+        model: Model name
+        finish_reason: Set to "stop" on last content chunk
+        usage: Token usage dict (only on final usage chunk)
+
+    Returns:
+        SSE-formatted string: "data: {json}\\n\\n"
+    """
+    chunk = {
+        "id": chunk_id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "delta": delta,
+                "logprobs": None,
+                "finish_reason": finish_reason,
+            }
+        ],
+        "usage": usage,
+        "service_tier": "default",
+        "system_fingerprint": None,
+    }
+    return f"data: {json.dumps(chunk)}\n\n"
+
+
+def format_stream_chunks(
+    content: str,
+    model: str = "gpt-4-vision-preview",
+    prompt_tokens: int = 100,
+    completion_tokens: Optional[int] = None,
+) -> Generator[str, None, None]:
+    """Generate SSE chunk sequence for a complete streaming response.
+
+    Produces the full OpenAI-compatible SSE event sequence:
+    1. Role chunk (role: assistant, content: "")
+    2. Content chunks (one per word for realistic streaming)
+    3. Stop chunk (empty delta, finish_reason: stop)
+    4. Usage chunk (token counts)
+    5. [DONE] sentinel
+
+    Args:
+        content: Full response text to stream
+        model: Model name
+        prompt_tokens: Mock prompt token count
+        completion_tokens: Mock completion token count (auto-calculated if None)
+
+    Yields:
+        SSE-formatted strings
+    """
+    chunk_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
+    created = int(time.time())
+
+    words = content.split()
+    if completion_tokens is None:
+        completion_tokens = len(words) * 2  # rough estimate
+
+    # 1. Role chunk
+    yield format_stream_chunk(
+        chunk_id=chunk_id,
+        delta={"role": "assistant", "content": ""},
+        created=created,
+        model=model,
+    )
+
+    # 2. Content chunks (one per word, with spaces)
+    for i, word in enumerate(words):
+        token = word if i == 0 else f" {word}"
+        yield format_stream_chunk(
+            chunk_id=chunk_id,
+            delta={"content": token},
+            created=created,
+            model=model,
+        )
+
+    # 3. Stop chunk
+    yield format_stream_chunk(
+        chunk_id=chunk_id,
+        delta={},
+        created=created,
+        model=model,
+        finish_reason="stop",
+    )
+
+    # 4. Usage chunk
+    usage = {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+    }
+    yield format_stream_chunk(
+        chunk_id=chunk_id,
+        delta={},
+        created=created,
+        model=model,
+        usage=usage,
+    )
+
+    # 5. Done sentinel
+    yield "data: [DONE]\n\n"

@@ -37,6 +37,10 @@ class Config:
     MOCK_VISION_DELAY = 0.1  # seconds
     MOCK_CHAT_DELAY = 0.2  # seconds
 
+    # Streaming (Question 2)
+    MAX_STREAMING_CONNECTIONS = 50  # Max concurrent SSE connections
+    STREAM_TIMEOUT_SECONDS = 30  # Max duration of a single stream
+
     # Silly excuses for upload-in-progress
     SILLY_EXCUSES = [
         "I went to the bathroom, be right back!",
@@ -65,6 +69,7 @@ class TestingConfig(Config):
     )
     MOCK_VISION_DELAY = 0  # No delays in tests
     MOCK_CHAT_DELAY = 0
+    STREAM_TIMEOUT_SECONDS = 5  # Short timeout for tests
 
 
 config_by_name = {

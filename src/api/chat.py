@@ -1,7 +1,8 @@
 """Chat API endpoints."""
 
+import threading
 import uuid
-from flask import Blueprint, request, jsonify, current_app, make_response
+from flask import Blueprint, request, jsonify, current_app, make_response, Response
 
 from src.models.chat import ChatRequest
 from src.services.session_service import SessionService
@@ -13,6 +14,21 @@ from src.api.middleware import limiter, get_session_id
 
 # Blueprint for chat-related endpoints
 chat_bp = Blueprint("chat", __name__)
+
+# Streaming connection limiter — initialized lazily with config value
+_stream_semaphore = None
+_stream_semaphore_lock = threading.Lock()
+
+
+def get_stream_semaphore():
+    """Get or create the BoundedSemaphore for streaming connection limiting."""
+    global _stream_semaphore
+    if _stream_semaphore is None:
+        with _stream_semaphore_lock:
+            if _stream_semaphore is None:
+                max_connections = current_app.config.get("MAX_STREAMING_CONNECTIONS", 50)
+                _stream_semaphore = threading.BoundedSemaphore(max_connections)
+    return _stream_semaphore
 
 # Global services (initialized on first request)
 _session_service = None
@@ -116,20 +132,11 @@ def chat():
             )
         ), 400
 
-    # Resolve which image to use
-    image_id, error = chat_service.resolve_image_id(session, explicit_image_id)
+    # Resolve which image to use (None is OK for text-only chat)
+    image_id, _ = chat_service.resolve_image_id(session, explicit_image_id)
 
-    if error:
-        return jsonify(
-            format_error_response(
-                message=error,
-                error_type="invalid_request_error",
-                code="no_image",
-            )
-        ), 404
-
-    # Check if upload is in progress
-    if chat_service.check_upload_in_progress(image_id):
+    # If image exists, check if upload is in progress
+    if image_id and chat_service.check_upload_in_progress(image_id):
         # Generate silly excuse
         excuse = chat_service.generate_silly_excuse()
 
@@ -175,6 +182,111 @@ def chat():
     )
 
     return response
+
+
+@chat_bp.route("/chat/stream", methods=["POST"])
+@limiter.limit(
+    lambda: current_app.config["CHAT_RATE_LIMIT"],
+    key_func=get_session_id,
+)
+def chat_stream():
+    """Stream a chat response using Server-Sent Events.
+
+    Implements: Question 2 - Streaming Responses
+
+    Expected JSON body:
+        {
+            "prompt": "What do you see?",
+            "image_id": "uuid"  // Optional override
+        }
+
+    Returns:
+        200: SSE stream (text/event-stream)
+        400: Invalid request (JSON error)
+        429: Rate limit exceeded
+    """
+    session = get_or_create_session_from_request()
+    session_service = get_session_service()
+    chat_service = get_chat_service()
+
+    # Parse request data
+    data = request.get_json()
+    if not data or "prompt" not in data:
+        return jsonify(
+            format_error_response(
+                message="Missing required field: prompt",
+                error_type="invalid_request_error",
+                code="missing_prompt",
+            )
+        ), 400
+
+    prompt = data["prompt"]
+    explicit_image_id = data.get("image_id")
+
+    # Validate and sanitize prompt
+    try:
+        prompt = validate_prompt(prompt, max_length=current_app.config["MAX_PROMPT_LENGTH"])
+    except ValueError as e:
+        return jsonify(
+            format_error_response(
+                message=str(e),
+                error_type="invalid_request_error",
+                param="prompt",
+                code="invalid_prompt",
+            )
+        ), 400
+
+    # Resolve image
+    image_id, _ = chat_service.resolve_image_id(session, explicit_image_id)
+
+    # If upload in progress, return JSON error (can't stream a silly excuse)
+    if image_id and chat_service.check_upload_in_progress(image_id):
+        return jsonify(
+            format_error_response(
+                message="Image upload in progress. Please try again shortly.",
+                error_type="invalid_request_error",
+                code="upload_in_progress",
+            )
+        ), 202
+
+    # Check concurrent connection limit (non-blocking acquire)
+    semaphore = get_stream_semaphore()
+    if not semaphore.acquire(blocking=False):
+        return jsonify(
+            format_error_response(
+                message="Too many active streaming connections. Please try again shortly.",
+                error_type="api_error",
+                code="streaming_capacity_exceeded",
+            )
+        ), 503
+
+    chat_delay = current_app.config.get("MOCK_CHAT_DELAY", 0.2)
+    stream_timeout = current_app.config.get("STREAM_TIMEOUT_SECONDS", 30)
+
+    # Get the streaming generator
+    inner_gen = mock_openai_chat(prompt, image_id, stream=True, delay=chat_delay,
+                                 timeout_seconds=stream_timeout)
+
+    def guarded_stream():
+        """Wrapper that releases the semaphore when streaming completes or disconnects."""
+        try:
+            yield from inner_gen
+        finally:
+            semaphore.release()
+
+    # Update session
+    session_service.update_session(session)
+
+    # Return SSE stream
+    return Response(
+        guarded_stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @chat_bp.route("/chat/relevance", methods=["POST"])
