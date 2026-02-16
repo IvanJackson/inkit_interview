@@ -1,0 +1,729 @@
+openapi: 3.0.3
+info:
+  title: Visual Assistant API - Foundational Endpoints
+  description: |
+    RESTful API for image upload, visual analysis, and conversational chat about images.
+    All AI responses match OpenAI API format exactly for client library compatibility.
+    Phase 1 (Question 1): Foundational API with session-based context, request queuing,
+    photo relevance analysis, and comprehensive validation.
+  version: 1.0.0
+  contact:
+    name: Visual Assistant API Team
+
+servers:
+  - url: http://127.0.0.1:5000
+    description: Local development server
+
+tags:
+  - name: Upload
+    description: Image upload and validation endpoints
+  - name: Chat
+    description: Conversational chat about uploaded images
+  - name: Session
+    description: Session management and restoration
+
+paths:
+  /upload:
+    post:
+      tags: [Upload]
+      summary: Upload an image for visual analysis
+      description: |
+        Accepts an image file via multipart form upload. Validates file type (JPEG, PNG, GIF, WebP),
+        size (≤16MB), dimensions (≤4096x4096), content integrity, and metadata extraction.
+        Detects suspected corruption and returns preview for user confirmation.
+        On success, returns a unique image ID and initial AI-powered visual analysis.
+        Updates the session context to reference this image for future chat requests.
+
+        **Rate limit**: 20 uploads per hour per session.
+      operationId: uploadImage
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: Image file (JPEG, PNG, GIF, or WebP). Max 16MB, max 4096x4096 pixels.
+      responses:
+        "200":
+          description: Image uploaded and analyzed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [image_id, analysis]
+                properties:
+                  image_id:
+                    type: string
+                    format: uuid
+                    description: Unique identifier for the uploaded image
+                    example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  filename:
+                    type: string
+                    description: Sanitized original filename
+                    example: "photo.jpg"
+                  size_bytes:
+                    type: integer
+                    description: File size in bytes
+                    example: 2048576
+                  width:
+                    type: integer
+                    description: Image width in pixels
+                    example: 1920
+                  height:
+                    type: integer
+                    description: Image height in pixels
+                    example: 1080
+                  format:
+                    type: string
+                    enum: [JPEG, PNG, GIF, WebP]
+                    description: Detected image format
+                    example: "JPEG"
+                  analysis:
+                    $ref: "#/components/schemas/ChatCompletionResponse"
+        "400":
+          description: Invalid request (no file provided, empty file)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "No image file provided in request"
+                  type: "invalid_request_error"
+                  param: "image"
+                  code: "missing_file"
+        "413":
+          description: File exceeds 16MB size limit
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "Image file exceeds maximum size of 16MB"
+                  type: "invalid_request_error"
+                  param: "image"
+                  code: "image_too_large"
+        "415":
+          description: Unsupported image format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "Unsupported image format. Allowed types: JPEG, PNG, GIF, WebP"
+                  type: "invalid_request_error"
+                  param: "image"
+                  code: "unsupported_format"
+        "422":
+          description: Image validation failed (dimensions exceeded, metadata extraction failed, corruption detected)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ErrorResponse"
+                  - $ref: "#/components/schemas/CorruptionPreviewResponse"
+              examples:
+                dimension_exceeded:
+                  summary: Image dimensions exceed 4096x4096 limit
+                  value:
+                    error:
+                      message: "Image dimensions 5000x3000 exceed maximum of 4096x4096 pixels"
+                      type: "invalid_request_error"
+                      param: "image"
+                      code: "dimensions_exceeded"
+                metadata_failure:
+                  summary: Cannot extract image metadata
+                  value:
+                    error:
+                      message: "Unable to extract image metadata. The file may be corrupted or in an unsupported format"
+                      type: "invalid_request_error"
+                      param: "image"
+                      code: "metadata_extraction_failed"
+                corruption_suspected:
+                  summary: Suspected image corruption with preview
+                  value:
+                    corruption_suspected: true
+                    preview_base64: "data:image/jpeg;base64,/9j/4AAQSkZJR..."
+                    message: "This image appears to be corrupted. Please review the preview and confirm."
+                    confirmation_url: "/upload/confirm"
+        "429":
+          description: Rate limit exceeded (20 uploads per hour per session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "Upload rate limit exceeded. Maximum 20 uploads per hour. Please try again later."
+                  type: "rate_limit_exceeded"
+                  param: null
+                  code: "rate_limit_exceeded"
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the rate limit resets
+              example: 1800
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "An unexpected error occurred while processing your upload"
+                  type: "api_error"
+                  param: null
+                  code: "internal_error"
+
+  /upload/confirm:
+    post:
+      tags: [Upload]
+      summary: Confirm or reject a suspected corrupted image
+      description: |
+        After receiving a corruption preview from /upload, the user can confirm
+        whether the image is corrupted (reject and re-upload) or valid (proceed with processing).
+      operationId: confirmUpload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [image_id, action]
+              properties:
+                image_id:
+                  type: string
+                  format: uuid
+                  description: The image ID from the corruption preview response
+                action:
+                  type: string
+                  enum: [confirm_valid, confirm_corrupted]
+                  description: User's decision about the image
+      responses:
+        "200":
+          description: Image confirmed as valid and analysis returned
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  image_id:
+                    type: string
+                    format: uuid
+                  analysis:
+                    $ref: "#/components/schemas/ChatCompletionResponse"
+        "400":
+          description: Image confirmed as corrupted - please re-upload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Image confirmed as corrupted. Please upload a valid image file."
+                  action:
+                    type: string
+                    example: "re-upload"
+
+  /chat:
+    post:
+      tags: [Chat]
+      summary: Ask a question about an uploaded image
+      description: |
+        Send a natural language question about an uploaded image. The system uses session
+        context to determine which image is being discussed - no explicit image ID required
+        for the most recently uploaded image.
+
+        **Session context**: If no image_id is provided, the system uses the most recently
+        uploaded image in the current session.
+
+        **During upload**: If an upload is in progress, returns a silly excuse and queues
+        the request for automatic processing after upload completes.
+
+        **Rate limit**: 100 requests per minute per session.
+      operationId: chatAboutImage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  description: Natural language question about the image (1-10,000 characters)
+                  maxLength: 10000
+                  minLength: 1
+                  example: "What objects do you see in this image?"
+                image_id:
+                  type: string
+                  format: uuid
+                  description: |
+                    Optional. Explicit image ID to override session default.
+                    If omitted, uses the most recently uploaded image in the session.
+                  example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      responses:
+        "200":
+          description: Chat response generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatCompletionResponse"
+              example:
+                id: "chatcmpl-abc123def456"
+                object: "chat.completion"
+                created: 1708000000
+                model: "gpt-4-vision-preview"
+                choices:
+                  - index: 0
+                    message:
+                      role: "assistant"
+                      content: "In this image, I can see a golden retriever sitting on a green lawn with a red ball nearby."
+                    finish_reason: "stop"
+                usage:
+                  prompt_tokens: 56
+                  completion_tokens: 24
+                  total_tokens: 80
+        "202":
+          description: Request queued during active upload - silly excuse returned
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [queued, excuse, chat_response]
+                properties:
+                  queued:
+                    type: boolean
+                    description: Indicates the request has been queued
+                    example: true
+                  queue_id:
+                    type: string
+                    format: uuid
+                    description: ID to track the queued request
+                  excuse:
+                    type: string
+                    description: Human-readable silly excuse
+                    example: "I went to the bathroom, be right back!"
+                  chat_response:
+                    $ref: "#/components/schemas/ChatCompletionResponse"
+                    description: The silly excuse formatted as OpenAI chat completion
+              example:
+                queued: true
+                queue_id: "q-789xyz"
+                excuse: "I'm fetching the dog, one moment please!"
+                chat_response:
+                  id: "chatcmpl-excuse123"
+                  object: "chat.completion"
+                  created: 1708000000
+                  model: "gpt-4-vision-preview"
+                  choices:
+                    - index: 0
+                      message:
+                        role: "assistant"
+                        content: "I'm fetching the dog, one moment please! Your question has been noted and I'll get back to you shortly."
+                      finish_reason: "stop"
+                  usage:
+                    prompt_tokens: 10
+                    completion_tokens: 20
+                    total_tokens: 30
+        "400":
+          description: Invalid request (missing prompt, prompt too long, malformed input)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                missing_prompt:
+                  summary: No prompt provided
+                  value:
+                    error:
+                      message: "Request must include a 'prompt' field with your question"
+                      type: "invalid_request_error"
+                      param: "prompt"
+                      code: "missing_field"
+                prompt_too_long:
+                  summary: Prompt exceeds 10,000 character limit
+                  value:
+                    error:
+                      message: "Prompt exceeds maximum length of 10,000 characters"
+                      type: "invalid_request_error"
+                      param: "prompt"
+                      code: "prompt_too_long"
+                no_image:
+                  summary: No image uploaded in session
+                  value:
+                    error:
+                      message: "Please upload an image first before starting a chat"
+                      type: "invalid_request_error"
+                      param: "image_id"
+                      code: "no_image_in_session"
+        "404":
+          description: Referenced image not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "Image not found. The specified image ID does not exist or has been removed"
+                  type: "invalid_request_error"
+                  param: "image_id"
+                  code: "image_not_found"
+        "423":
+          description: Upload in progress (alternative to 202 if queuing is not desired)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "Image is currently being processed. Please wait for upload to complete"
+                  type: "invalid_request_error"
+                  param: "image_id"
+                  code: "upload_in_progress"
+        "429":
+          description: Rate limit exceeded (100 requests per minute per session)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "Chat rate limit exceeded. Maximum 100 requests per minute. Please try again later."
+                  type: "rate_limit_exceeded"
+                  param: null
+                  code: "rate_limit_exceeded"
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until the rate limit resets
+              example: 30
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /chat/relevance:
+    post:
+      tags: [Chat]
+      summary: Confirm or reject conversation topic switch
+      description: |
+        When a new unrelated image is uploaded during an existing conversation,
+        the system prompts whether to start a new conversation. This endpoint
+        accepts the user's confirmation.
+      operationId: confirmRelevanceSwitch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [start_new, keep_current]
+                  description: Whether to switch to new image topic or keep current
+                new_image_id:
+                  type: string
+                  format: uuid
+                  description: The new image that triggered the relevance prompt
+      responses:
+        "200":
+          description: Conversation context updated based on user's choice
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action_taken:
+                    type: string
+                    enum: [switched_to_new, kept_current]
+                  current_image_id:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+              examples:
+                switched:
+                  value:
+                    action_taken: "switched_to_new"
+                    current_image_id: "new-image-uuid"
+                    message: "Great! I'm now looking at your new image. What would you like to know?"
+                kept:
+                  value:
+                    action_taken: "kept_current"
+                    current_image_id: "original-image-uuid"
+                    message: "No problem! Let's continue discussing the current image."
+
+  /chat/queue/{queue_id}:
+    get:
+      tags: [Chat]
+      summary: Check status of a queued chat request
+      description: |
+        Poll for the result of a chat request that was queued during image upload.
+        Returns 202 if still pending, 200 with the chat completion response if processed.
+      operationId: getQueuedChatResult
+      parameters:
+        - name: queue_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Queue ID returned in the 202 response
+      responses:
+        "200":
+          description: Queued request has been processed — full response available
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, response]
+                properties:
+                  status:
+                    type: string
+                    enum: ["completed"]
+                  response:
+                    $ref: "#/components/schemas/ChatCompletionResponse"
+        "202":
+          description: Request still pending — upload not yet complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: ["pending"]
+                  message:
+                    type: string
+                    example: "Still working on it! Your request will be processed once the upload completes."
+        "404":
+          description: Queue ID not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "Queued request not found"
+                  type: "invalid_request_error"
+                  param: "queue_id"
+                  code: "queue_not_found"
+
+  /session/restore:
+    post:
+      tags: [Session]
+      summary: Restore an expired session
+      description: |
+        Restores a previously expired session, allowing the user to continue
+        their conversation from where they left off. Requires re-authentication
+        if accessing from a different device.
+      operationId: restoreSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id]
+              properties:
+                session_id:
+                  type: string
+                  format: uuid
+                  description: The expired session ID to restore
+                browser_device_id:
+                  type: string
+                  description: Browser/device fingerprint for device match validation. Must match the original session's device to restore without starting a new session.
+      responses:
+        "200":
+          description: Session restored successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  current_image_id:
+                    type: string
+                    format: uuid
+                  conversation_topic:
+                    type: string
+                  restored_at:
+                    type: string
+                    format: date-time
+                  message:
+                    type: string
+                    example: "Welcome back! Your conversation about the landscape photo has been restored."
+        "401":
+          description: Device mismatch detected — session cannot be restored from a different device
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "Session was created on a different device. For security, please start a new session on this device."
+                  type: "authentication_error"
+                  param: "browser_device_id"
+                  code: "device_mismatch"
+        "404":
+          description: Session not found or cannot be restored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "Session not found or has expired beyond the restoration window"
+                  type: "invalid_request_error"
+                  param: "session_id"
+                  code: "session_not_found"
+
+components:
+  schemas:
+    ChatCompletionResponse:
+      type: object
+      description: OpenAI-compatible chat completion response format
+      required: [id, object, created, model, choices, usage]
+      properties:
+        id:
+          type: string
+          description: Unique response ID with chatcmpl- prefix
+          pattern: "^chatcmpl-[a-zA-Z0-9]+$"
+          example: "chatcmpl-abc123def456ghi789"
+        object:
+          type: string
+          enum: ["chat.completion"]
+          description: Always "chat.completion"
+        created:
+          type: integer
+          description: Unix timestamp (seconds since epoch)
+          example: 1708000000
+        model:
+          type: string
+          description: Model name identifier
+          example: "gpt-4-vision-preview"
+        choices:
+          type: array
+          items:
+            $ref: "#/components/schemas/Choice"
+          minItems: 1
+        usage:
+          $ref: "#/components/schemas/Usage"
+
+    Choice:
+      type: object
+      required: [index, message, finish_reason]
+      properties:
+        index:
+          type: integer
+          description: Choice index (0 for single-choice responses)
+          example: 0
+        message:
+          $ref: "#/components/schemas/Message"
+        finish_reason:
+          type: string
+          enum: ["stop", "length", "content_filter"]
+          nullable: true
+          description: Reason the response ended
+          example: "stop"
+
+    Message:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: ["assistant"]
+          description: Always "assistant" for responses
+        content:
+          type: string
+          description: The response text content
+          example: "This image shows a beautiful sunset over the ocean with vibrant orange and purple colors."
+
+    Usage:
+      type: object
+      required: [prompt_tokens, completion_tokens, total_tokens]
+      properties:
+        prompt_tokens:
+          type: integer
+          description: Number of tokens in the prompt
+          example: 56
+        completion_tokens:
+          type: integer
+          description: Number of tokens in the completion
+          example: 31
+        total_tokens:
+          type: integer
+          description: Total tokens used (prompt + completion)
+          example: 87
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message, type, code]
+          properties:
+            message:
+              type: string
+              description: Human-readable error description with actionable guidance
+              example: "Image file exceeds maximum size of 16MB"
+            type:
+              type: string
+              enum:
+                - invalid_request_error
+                - rate_limit_exceeded
+                - authentication_error
+                - api_error
+              description: Error category matching OpenAI error types
+              example: "invalid_request_error"
+            param:
+              type: string
+              nullable: true
+              description: The parameter that caused the error
+              example: "image"
+            code:
+              type: string
+              description: Machine-readable error code
+              example: "image_too_large"
+
+    CorruptionPreviewResponse:
+      type: object
+      required: [corruption_suspected, preview_base64, message, confirmation_url]
+      properties:
+        corruption_suspected:
+          type: boolean
+          description: Always true for corruption previews
+          example: true
+        preview_base64:
+          type: string
+          description: Base64-encoded preview of the suspected corrupted image
+          example: "data:image/jpeg;base64,/9j/4AAQSkZJR..."
+        message:
+          type: string
+          description: Explanation for the user
+          example: "This image appears to be corrupted. Please review the preview and confirm."
+        confirmation_url:
+          type: string
+          description: URL to confirm or reject the image
+          example: "/upload/confirm"

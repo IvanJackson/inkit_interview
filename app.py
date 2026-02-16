@@ -1,85 +1,142 @@
+"""Flask application factory for Visual Assistant API."""
+
 import os
-import uuid
-import time
-from flask import Flask, request, jsonify, Response
-from werkzeug.utils import secure_filename
+import signal
+from flask import Flask, jsonify
 
-# --- Placeholder for future DB Setup ---
-# from sqlalchemy import ...
-# DATABASE_URL = "sqlite:///./visual_assistant.db"
-# engine = ...
-# SessionLocal = ...
-# Base = ...
-# class UploadedImage(Base): ...
-# class ChatHistory(Base): ...
-# def create_db_tables(): ...
-# ------------------------------------
+from config import config_by_name
 
-app = Flask(__name__)
 
-# --- Placeholder for teardown context ---
-# @app.teardown_appcontext
-# def remove_session(*args, **kwargs): ...
-# ---------------------------------------
+def create_app(config_name=None):
+    """Create and configure the Flask application.
 
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+    Args:
+        config_name: Configuration name ('development', 'testing', 'production').
+                     Defaults to FLASK_ENV environment variable or 'development'.
 
-# Initial storage - to be replaced with a proper database solution
-image_data = {}
+    Returns:
+        Configured Flask application instance.
+    """
+    if config_name is None:
+        config_name = os.environ.get("FLASK_ENV", "development")
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    app = Flask(__name__)
+    app.config.from_object(config_by_name[config_name])
 
-# --- Placeholder for DB Init Call ---
-# create_db_tables()
-# ----------------------------------
+    # Ensure upload directory exists
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    # Initialize middleware
+    _init_middleware(app)
 
-def mock_openai_vision_analysis(image_path):
-    """Simulates initial analysis of the uploaded image."""
-    time.sleep(0.1)
-    # Implement the correct response format for OpenAI Vision API
-    pass
+    # Register blueprints
+    _register_blueprints(app)
 
-# --- Placeholder for Q2 streaming generator ---
-# def generate_mock_assistant_events(prompt, image_id): ...
-# --------------------------------------------
+    # Register error handlers
+    _register_error_handlers(app)
 
-def mock_openai_chat(prompt, image_id, stream=False):
-    """Simulates a call to a chat model."""
-    time.sleep(0.2)
-    if stream:
-        # Implement streaming response format for OpenAI Chat API
-        pass
-    else:
-        # Implement non-streaming response format for OpenAI Chat API
-        pass
+    # @app.route('/shutdown', methods=['POST'])
+    # def shutdown():
+    #     # This sends an interrupt signal to the process, mimicking Ctrl+C
+    #    try:
+    #         os.kill(os.getpid(), signal.SIGINT)
+    #         # time.sleep(1)
+    #    except KeyboardInterrupt:
+    #     print("Caught SIGINT, cleaning up...")
+    #     return jsonify({
+    #             "success": True,
+    #             "message": "Server is shutting down..."
+    #         })
+    # shutdown()
 
-# === API Endpoints (Initial Template) ===
 
-@app.route('/upload', methods=['POST'])
-def upload_image():
-    # Implement image upload endpoint
-    pass
+    return app
 
-@app.route('/chat/<image_id>', methods=['POST'])
-def chat_about_image(image_id):
-    # Implement chat endpoint
-    pass
 
-@app.route('/chat-stream/<image_id>', methods=['POST'])
-def chat_about_image_stream(image_id):
-    # Implement streaming chat endpoint
-    pass
+def _init_middleware(app):
+    """Initialize middleware components."""
+    from src.api.middleware import init_middleware
 
-# --- Placeholder for Q3 Streaming History Wrapper ---
-# def generate_chunks_and_capture_history(prompt, image_id, stream_response): ...
-# ---------------------------------------------------
+    init_middleware(app)
 
-if __name__ == '__main__':
-    app.run(debug=True, threaded=True) 
+
+def _register_blueprints(app):
+    """Register Flask blueprints for API routes."""
+    from src.api.upload import upload_bp
+    from src.api.chat import chat_bp
+
+    app.register_blueprint(upload_bp)
+    app.register_blueprint(chat_bp)
+
+
+def _register_error_handlers(app):
+    """Register global error handlers returning OpenAI-compatible error format."""
+    from src.utils.openai_formatter import format_error_response
+
+    @app.errorhandler(400)
+    def bad_request(e):
+        return jsonify(format_error_response(
+            message=str(e.description) if hasattr(e, "description") else "Bad request",
+            error_type="invalid_request_error",
+            code="bad_request",
+        )), 400
+
+    @app.errorhandler(404)
+    def not_found(e):
+        return jsonify(format_error_response(
+            message="The requested resource was not found",
+            error_type="invalid_request_error",
+            code="not_found",
+        )), 404
+
+    @app.errorhandler(413)
+    def payload_too_large(e):
+        return jsonify(format_error_response(
+            message="Image file exceeds maximum size of 16MB",
+            error_type="invalid_request_error",
+            param="image",
+            code="image_too_large",
+        )), 413
+
+    @app.errorhandler(415)
+    def unsupported_media_type(e):
+        return jsonify(format_error_response(
+            message="Unsupported image format. Accepted: JPEG, PNG, GIF, WebP",
+            error_type="invalid_request_error",
+            param="image",
+            code="unsupported_format",
+        )), 415
+
+    @app.errorhandler(422)
+    def unprocessable_entity(e):
+        return jsonify(format_error_response(
+            message=str(e.description) if hasattr(e, "description") else "Validation failed",
+            error_type="invalid_request_error",
+            code="validation_failed",
+        )), 422
+
+    @app.errorhandler(429)
+    def rate_limit_exceeded(e):
+        return jsonify(format_error_response(
+            message="Rate limit exceeded. Please try again later.",
+            error_type="rate_limit_exceeded",
+            code="rate_limit_exceeded",
+        )), 429
+
+    @app.errorhandler(500)
+    def internal_error(e):
+        return jsonify(format_error_response(
+            message="An internal error occurred. Please try again later.",
+            error_type="api_error",
+            code="internal_error",
+        )), 500
+    
+
+
+    
+
+
+# Application entry point
+if __name__ == "__main__":
+    application = create_app()
+    application.run(debug=True, threaded=True, port=5001)

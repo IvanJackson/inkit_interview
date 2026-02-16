@@ -8,6 +8,8 @@ flask = ">=2.0"
 pytest = ">=6.0"
 werkzeug = ">=2.0"
 python-dotenv = ">=0.15"
+pillow = ">=10.0"
+flask-limiter = ">=3.0"
 
 [dev-packages]
 

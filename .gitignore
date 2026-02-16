@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project
+uploads/
+test_uploads/
+*.log
+
+# Development/Intermediary Files (keep locally, don't commit)
+FINAL_SUMMARY.md
+IMPLEMENTATION_STATUS.md
+HYBRID_UPLOAD_FEATURE.md
+Personal input.txt
+cookies.txt
+test_output.txt
+
+# Test artifacts
+.pytest_cache/
+
+# Speckit development files (optional - uncomment to exclude)
+# .specify/
+# .claude/
+# specs/*/checklists/
