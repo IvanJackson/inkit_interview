@@ -1,10 +1,10 @@
-# Visual Assistant API - Phase 1 Complete ✅
+# Visual Assistant API - Phase 2 Complete ✅
 
-A production-ready RESTful API for image upload and AI-powered conversational analysis. Built with Flask, featuring OpenAI-compatible responses, session management, and comprehensive validation.
+A production-ready RESTful API for image upload and AI-powered conversational analysis with real-time streaming responses. Built with Flask, featuring OpenAI-compatible SSE streaming, connection resilience, and comprehensive validation.
 
-## 🎯 Phase 1 Status: COMPLETE
+## 🎯 Implementation Status
 
-**Implemented Features:**
+### Phase 1: Foundational API ✅ COMPLETE
 - ✅ Image upload with multi-layer validation (type, size, dimensions, content, metadata)
 - ✅ Corrupted image detection with visual preview confirmation
 - ✅ Session-based conversational chat (no explicit image IDs needed)
@@ -16,6 +16,18 @@ A production-ready RESTful API for image upload and AI-powered conversational an
 - ✅ Complete browser tab isolation
 - ✅ Security: XSS/SQL injection prevention, Unicode support, rate limiting
 - ✅ Concurrent request handling with thread safety
+
+### Phase 2: Streaming Responses ✅ COMPLETE
+- ✅ Server-Sent Events (SSE) streaming with OpenAI chat.completion.chunk format
+- ✅ Word-by-word progressive rendering in browser
+- ✅ Connection limit enforcement (50 concurrent streams via BoundedSemaphore)
+- ✅ Stream timeout protection (30 second max per stream)
+- ✅ Client disconnect detection (GeneratorExit handling)
+- ✅ Automatic frontend fallback to non-streaming on failure
+- ✅ Rate limiting on streaming endpoint (100 req/min)
+- ✅ Concurrent stream isolation (no data mixing)
+- ✅ Image analysis streaming support
+- ✅ Comprehensive testing (73 unit tests + 12 integration tests)
 
 ## 🚀 Quick Start
 
@@ -54,14 +66,44 @@ pip install -r requirements.txt
 python app.py
 ```
 
-The API will be available at `http://127.0.0.1:5000`
+The API will be available at `http://127.0.0.1:5001`
 
 ## 📖 API Usage
 
-### 1. Upload Image (Basic)
+### 1. Chat with Streaming (Real-Time Response)
 
 ```bash
-curl -X POST http://127.0.0.1:5000/upload \
+curl -N -X POST http://127.0.0.1:5001/chat/stream \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{"prompt": "Tell me a story"}'
+```
+
+**Response (Server-Sent Events):**
+```
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"Once"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" upon"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" a"},"finish_reason":null}]}
+
+...
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":10,"completion_tokens":50,"total_tokens":60}}
+
+data: [DONE]
+```
+
+**Note:** Streaming responses appear word-by-word in real-time. Use the browser UI at `http://127.0.0.1:5001` for the best experience.
+
+### 2. Upload Image (Basic)
+
+```bash
+curl -X POST http://127.0.0.1:5001/upload \
   -F "image=@photo.jpg" \
   -c cookies.txt
 ```
@@ -89,10 +131,10 @@ curl -X POST http://127.0.0.1:5000/upload \
 }
 ```
 
-### 2. Upload Image with Prompt (Hybrid)
+### 3. Upload Image with Prompt (Hybrid)
 
 ```bash
-curl -X POST http://127.0.0.1:5000/upload \
+curl -X POST http://127.0.0.1:5001/upload \
   -F "image=@photo.jpg" \
   -F "prompt=What colors do you see?" \
   -c cookies.txt
@@ -116,10 +158,10 @@ curl -X POST http://127.0.0.1:5000/upload \
 }
 ```
 
-### 3. Chat About Uploaded Image
+### 4. Chat About Uploaded Image (Non-Streaming)
 
 ```bash
-curl -X POST http://127.0.0.1:5000/chat \
+curl -X POST http://127.0.0.1:5001/chat \
   -H "Content-Type: application/json" \
   -b cookies.txt \
   -d '{"prompt": "What is the main subject?"}'
@@ -145,7 +187,24 @@ curl -X POST http://127.0.0.1:5000/chat \
 }
 ```
 
-### 4. Handle Corrupted Images
+### 5. Stream Image Analysis
+
+```bash
+# Upload image first
+IMAGE_ID=$(curl -s -X POST http://127.0.0.1:5001/upload \
+  -F "image=@photo.jpg" \
+  -c cookies.txt | jq -r '.image_id')
+
+# Stream analysis of the uploaded image
+curl -N -X POST http://127.0.0.1:5001/chat/stream \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d "{\"prompt\": \"Describe this image\", \"image_id\": \"$IMAGE_ID\"}"
+```
+
+**Note:** Image analysis also streams word-by-word, just like text-only chat.
+
+### 6. Handle Corrupted Images
 
 If corruption is detected, you'll receive:
 ```json
@@ -162,7 +221,7 @@ If corruption is detected, you'll receive:
 
 Confirm or reject:
 ```bash
-curl -X POST http://127.0.0.1:5000/upload/confirm \
+curl -X POST http://127.0.0.1:5001/upload/confirm \
   -H "Content-Type: application/json" \
   -d '{"image_id": "uuid", "action": "confirm_valid"}'
 ```
@@ -172,31 +231,52 @@ curl -X POST http://127.0.0.1:5000/upload/confirm \
 ### Run Unit Tests
 
 ```bash
-# All tests
-pytest tests/ -v
+# All tests (73 total)
+python3 -m pytest tests/ -v
 
-# Specific test suite
+# Specific test suites
+pytest tests/unit/test_streaming.py -v      # 36 streaming tests
 pytest tests/unit/test_openai_formatter.py -v
 pytest tests/unit/test_security.py -v
 ```
 
-### Run Example Scripts
+**Current Test Status:** ✅ 73/73 passing
+
+### Run Streaming Validation (End-to-End)
 
 ```bash
-# Test basic upload workflow
-python test_scripts/test_upload_basic.py
+# Terminal 1: Start the server
+python3 app.py
 
-# Test hybrid upload (image + prompt)
-python test_scripts/test_upload_with_prompt.py
+# Terminal 2: Run comprehensive validation
+python3 validate_streaming.py
 
-# Test chat workflow
-python test_scripts/test_chat_workflow.py
-
-# Verify OpenAI format compatibility
-python test_scripts/test_openai_format.py
+# Run specific test
+python3 validate_streaming.py 7  # Test connection limits
 ```
 
-**Current Test Status:** ✅ 41/41 passing
+**Validation Coverage:**
+- ✅ SSE format compliance (FR-006 through FR-014)
+- ✅ First token latency <200ms (SC-001)
+- ✅ Content reassembly (SC-002)
+- ✅ Client disconnect detection (FR-015)
+- ✅ Stream timeout enforcement (FR-020, SC-004)
+- ✅ Concurrent streams with no mixing (SC-003, FR-022)
+- ✅ Connection limit (503 at 50 streams) (FR-018, FR-019)
+- ✅ Rate limiting (429 after 100/min) (SC-007, FR-005)
+- ✅ Error handling before streaming (FR-001, FR-003)
+- ✅ Client-side fallback mechanism (FR-016, FR-017)
+- ✅ Image streaming support (FR-022, FR-024, FR-026)
+- ✅ Single response for upload+prompt
+
+### Manual UI Testing
+
+Open `http://127.0.0.1:5001` in your browser and follow [UI_TESTING_INSTRUCTIONS.md](UI_TESTING_INSTRUCTIONS.md) for interactive testing scenarios including:
+- Normal streaming behavior
+- Server disconnect mid-stream
+- Network failure simulation
+- Fallback to non-streaming
+- Concurrent streams in multiple tabs
 
 ## 📁 Project Structure
 
@@ -205,7 +285,7 @@ python test_scripts/test_openai_format.py
 ├── src/
 │   ├── api/              # API endpoints
 │   │   ├── upload.py     # /upload, /upload/confirm
-│   │   ├── chat.py       # /chat, session management
+│   │   ├── chat.py       # /chat, /chat/stream (SSE), session management
 │   │   └── middleware.py # Error handling, rate limiting
 │   ├── models/           # Data models
 │   │   ├── image.py      # Image entity
@@ -216,40 +296,72 @@ python test_scripts/test_openai_format.py
 │   │   ├── image_service.py       # Upload, validation, corruption detection
 │   │   ├── session_service.py     # Session tracking, persistence
 │   │   ├── chat_service.py        # Chat processing, queuing
-│   │   └── mock_openai_service.py # Mock AI responses
+│   │   └── mock_openai_service.py # Mock AI responses with streaming
 │   └── utils/            # Utilities
-│       ├── openai_formatter.py    # OpenAI format helpers
+│       ├── openai_formatter.py    # SSE chunk formatting, OpenAI format helpers
 │       └── security.py            # Input validation, XSS/SQL prevention
+├── static/
+│   └── index.html        # Browser UI with streaming + fallback
 ├── tests/
-│   ├── unit/             # Unit tests
-│   └── integration/      # Integration tests (planned)
-├── test_scripts/         # Example usage scripts
+│   └── unit/             # Unit tests (73 total)
+│       ├── test_streaming.py      # 36 streaming-specific tests
+│       ├── test_openai_formatter.py
+│       └── test_security.py
 ├── specs/                # Feature specifications
+│   ├── 001-foundational-api/      # Phase 1 specs
+│   └── 002-streaming-responses/   # Phase 2 specs
 ├── app.py                # Flask application entry point
-├── config.py             # Configuration
+├── config.py             # Configuration (includes streaming limits)
+├── validate_streaming.py # End-to-end streaming validation (12 tests)
+├── UI_TESTING_INSTRUCTIONS.md    # Manual UI testing guide
+├── Q2_IMPLEMENTATION_SUMMARY.md  # Phase 2 technical summary
 └── requirements.txt      # Dependencies
 ```
 
-## 🔒 Security Features
+## 🔒 Security & Protection
 
-- **Input Validation**: File type, size (≤16MB), dimensions (≤4096x4096)
+### Input Validation
+- **File type, size (≤16MB), dimensions (≤4096x4096)**
 - **Content Validation**: Magic number verification, metadata extraction
 - **XSS Prevention**: Pattern detection for `<script>`, `javascript:`, event handlers
 - **SQL Injection Prevention**: Pattern detection for SQL keywords
 - **Path Traversal Prevention**: `../` detection in filenames
 - **Unicode Support**: Full Unicode with control character filtering
-- **Rate Limiting**: 20 uploads/hour, 100 chats/minute per session
-- **Secure Sessions**: Browser/device fingerprinting, re-auth on device switch
+
+### Rate Limiting & Backpressure
+- **Upload Rate**: 20 uploads/hour per session
+- **Chat Rate**: 100 requests/minute per session (applies to both `/chat` and `/chat/stream`)
+- **Connection Limit**: Max 50 concurrent streaming connections (BoundedSemaphore)
+- **Stream Timeout**: 30 second maximum per stream
+- **Error Responses**: 429 (rate limit), 503 (capacity exceeded)
+
+### Session Security
+- **Browser/device fingerprinting**: Prevents session hijacking
+- **Re-authentication**: Required on device switch
+- **Session timeout**: 24 hours of inactivity
 
 ## 🎯 API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/upload` | POST | Upload image (optionally with prompt) |
-| `/upload/confirm` | POST | Confirm corrupted image handling |
-| `/chat` | POST | Ask question about uploaded image |
-| `/chat/relevance` | POST | Handle photo relevance switch |
-| `/session/restore` | POST | Restore expired session |
+| Endpoint | Method | Description | Response Format |
+|----------|--------|-------------|-----------------|
+| `/` | GET | Browser UI with streaming support | HTML |
+| `/upload` | POST | Upload image (optionally with prompt) | JSON |
+| `/upload/confirm` | POST | Confirm corrupted image handling | JSON |
+| `/chat` | POST | Ask question (non-streaming) | JSON |
+| **`/chat/stream`** | **POST** | **Ask question (streaming SSE)** | **text/event-stream** |
+| `/chat/relevance` | POST | Handle photo relevance switch | JSON |
+| `/session/restore` | POST | Restore expired session | JSON |
+
+### Streaming Endpoint Details
+
+**`POST /chat/stream`** returns Server-Sent Events (SSE) with OpenAI chat.completion.chunk format:
+
+- **Content-Type**: `text/event-stream`
+- **Chunk Format**: `data: {json}\n\n`
+- **Sequence**: role → content (N chunks) → stop → usage → [DONE]
+- **Error Codes**: 400 (invalid prompt), 429 (rate limit), 503 (capacity exceeded)
+- **Timeout**: Automatically terminates after 30 seconds
+- **Fallback**: Frontend automatically retries via `/chat` on failure
 
 ## 📊 OpenAI API Compatibility
 
@@ -260,35 +372,59 @@ This implementation matches OpenAI API formats exactly:
 - Content blocks with `type: "output_text"`
 - Token usage: `input_tokens`, `output_tokens`
 
-**Chat Completion** → **Chat Completions API Format**
+**Chat Completion (Non-Streaming)** → **Chat Completions API Format**
 - Uses `choices` array with message objects
 - Token usage: `prompt_tokens`, `completion_tokens`
 - Includes `finish_reason`, `logprobs`, `service_tier`
 
+**Chat Completion (Streaming)** → **Chat Completions Streaming API Format**
+- Server-Sent Events (SSE) with `text/event-stream` Content-Type
+- Each chunk: `object: "chat.completion.chunk"`
+- Uses `delta` (not `message`) in choices
+- Chunk sequence: role → content chunks → stop (finish_reason) → usage → [DONE]
+- All chunks share same `id` for reassembly
+- Matches OpenAI streaming behavior exactly
+
 ## 🚧 Roadmap
 
-### Question 2: Streaming Responses (Planned)
-- Server-Sent Events (SSE) for real-time responses
-- Backpressure handling
-- Reconnection logic
+### ✅ Phase 1: Foundational API (COMPLETE)
+- Image upload with validation
+- Session-based chat
+- OpenAI-compatible responses
+- Security & rate limiting
 
-### Question 3: Conversation History (Planned)
+### ✅ Phase 2: Streaming Responses (COMPLETE)
+- Server-Sent Events (SSE) for real-time responses
+- Backpressure handling (connection limits, timeouts)
+- Frontend fallback mechanism
+- Comprehensive testing
+
+### 🚧 Phase 3: Conversation History (Planned)
 - Multi-turn conversation storage
 - Context-aware responses
 - History cleanup
 
-### Question 4: Production Database (Planned)
+### 🚧 Phase 4: Production Database (Planned)
 - SQLAlchemy + PostgreSQL
 - Database migrations
 - Caching layer
 
 ## 📝 Documentation
 
+### Phase 1: Foundational API
 - [Quickstart Guide](specs/001-foundational-api/quickstart.md) - Detailed API usage examples
 - [Feature Specification](specs/001-foundational-api/spec.md) - Complete requirements
 - [Implementation Plan](specs/001-foundational-api/plan.md) - Architecture and design
 - [Data Model](specs/001-foundational-api/data-model.md) - Entity definitions
 - [Task Breakdown](specs/001-foundational-api/tasks.md) - Implementation tasks
+
+### Phase 2: Streaming Responses
+- [Q2 Implementation Summary](Q2_IMPLEMENTATION_SUMMARY.md) - **Start here** - comprehensive technical overview
+- [Feature Specification](specs/002-streaming-responses/spec.md) - Requirements and user stories
+- [Implementation Plan](specs/002-streaming-responses/plan.md) - Architecture decisions
+- [Task Breakdown](specs/002-streaming-responses/tasks.md) - All 32 tasks with dependencies
+- [UI Testing Guide](UI_TESTING_INSTRUCTIONS.md) - Manual browser testing scenarios
+- [Validation Script](validate_streaming.py) - 12 end-to-end tests with visible proof
 
 ## 🤝 Contributing
 
@@ -301,5 +437,6 @@ MIT License - See LICENSE file for details
 ---
 
 **Built with:** Python 3.13, Flask, Pillow, Flask-Limiter, pytest
-**OpenAI API Compatibility:** Responses API (vision), Chat Completions API (chat)
-**Status:** Phase 1 Complete ✅ | All tests passing (41/41)
+**OpenAI API Compatibility:** Responses API (vision), Chat Completions API (chat + streaming)
+**Status:** Phase 2 Complete ✅ | All tests passing (73/73 unit tests + 12/12 validation tests)
+**Streaming:** SSE with word-by-word rendering, 50 concurrent streams, 30s timeout, automatic fallback
