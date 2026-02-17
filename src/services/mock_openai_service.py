@@ -86,15 +86,18 @@ def mock_openai_vision_analysis(image_path: str, delay: float = 0.1) -> dict:
 def mock_openai_chat(
     prompt: str,
     image_id: Optional[str] = None,
+    history: Optional[list] = None,
     stream: bool = False,
     delay: float = 3,
     timeout_seconds: float = None,
 ) -> dict:
-    """Generate mock chat completion response.
+    """Generate mock chat completion response with conversation history support.
 
     Args:
         prompt: User's chat prompt
         image_id: ID of image being discussed (None for text-only)
+        history: Optional conversation history in OpenAI messages format
+                 [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
         stream: Whether to stream response
         delay: Simulated processing delay in seconds
         timeout_seconds: Max stream duration (streaming only)
@@ -102,10 +105,20 @@ def mock_openai_chat(
     Returns:
         OpenAI-compatible chat completion response (or generator if stream=True)
     """
+    # Generate response considering conversation history
+    # Note: In a real implementation, history would be passed to the AI model
+    # For this mock, we generate responses based on prompt/image as before
+    # History is used for token counting to maintain realistic API behavior
     if image_id:
         response = _generate_image_response(prompt)
     else:
         response = _generate_text_only_response(prompt)
+
+    # Calculate total prompt tokens including history
+    prompt_tokens = len(prompt.split()) * 2
+    if history:
+        for msg in history:
+            prompt_tokens += len(msg.get("content", "").split()) * 2
 
     if stream:
         return _stream_response(response, prompt, delay, timeout_seconds=timeout_seconds)
@@ -116,7 +129,7 @@ def mock_openai_chat(
     # Format as OpenAI chat completion
     return format_chat_completion(
         content=response,
-        prompt_tokens=len(prompt.split()) * 2,
+        prompt_tokens=prompt_tokens,
         completion_tokens=len(response.split()) * 2,
     )
 

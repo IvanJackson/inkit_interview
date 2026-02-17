@@ -33,6 +33,7 @@ def get_stream_semaphore():
 # Global services (initialized on first request)
 _session_service = None
 _chat_service = None
+_conversation_service = None
 
 
 def get_session_service():
@@ -53,6 +54,16 @@ def get_chat_service():
             silly_excuses=current_app.config["SILLY_EXCUSES"]
         )
     return _chat_service
+
+
+def get_conversation_service():
+    """Get or create conversation service instance."""
+    global _conversation_service
+    if _conversation_service is None:
+        from src.services.conversation_service import ConversationService
+
+        _conversation_service = ConversationService()
+    return _conversation_service
 
 
 def get_or_create_session_from_request():
@@ -167,8 +178,41 @@ def chat():
         return response
 
     # Normal flow - process chat request immediately
-    chat_delay = current_app.config.get("MOCK_CHAT_DELAY",0.2)
-    chat_response = mock_openai_chat(prompt, image_id, delay=chat_delay)
+    conversation_service = get_conversation_service()
+
+    # Get or create conversation for this image/session (T009)
+    conversation = conversation_service.get_or_create_conversation(
+        image_id=image_id, session_id=session.session_id
+    )
+
+    # Retrieve conversation history for AI context
+    history = conversation_service.get_context_for_ai(
+        conversation.conversation_id,
+        max_messages=current_app.config.get("HISTORY_MAX_MESSAGES", 50),
+        max_tokens=current_app.config.get("HISTORY_MAX_TOKENS", 10_000),
+    )
+
+    # Add user message to history (graceful degradation per FR-012)
+    conversation_service.add_message(
+        conversation.conversation_id, role="user", content=prompt
+    )
+    current_app.logger.info(f"Added user message to conversation {conversation.conversation_id}")
+
+    # Generate response with history context
+    chat_delay = current_app.config.get("MOCK_CHAT_DELAY", 0.2)
+    chat_response = chat_service.chat(
+        prompt=prompt, image_id=image_id, history=history, delay=chat_delay
+    )
+
+    # Add assistant response to history (graceful degradation)
+    if chat_response and "choices" in chat_response:
+        assistant_content = chat_response["choices"][0]["message"]["content"]
+        conversation_service.add_message(
+            conversation.conversation_id, role="assistant", content=assistant_content
+        )
+        current_app.logger.info(f"Added assistant message to conversation {conversation.conversation_id}: {assistant_content[:50]}...")
+    else:
+        current_app.logger.warning(f"No assistant response to save for conversation {conversation.conversation_id}")
 
     # Update session
     session_service.update_session(session)
@@ -260,18 +304,140 @@ def chat_stream():
             )
         ), 503
 
+    conversation_service = get_conversation_service()
+
+    # Get or create conversation for this image/session (T010)
+    conversation = conversation_service.get_or_create_conversation(
+        image_id=image_id, session_id=session.session_id
+    )
+
+    # Retrieve conversation history for AI context
+    history = conversation_service.get_context_for_ai(
+        conversation.conversation_id,
+        max_messages=current_app.config.get("HISTORY_MAX_MESSAGES", 50),
+        max_tokens=current_app.config.get("HISTORY_MAX_TOKENS", 10_000),
+    )
+
+    # Add user message to history (graceful degradation per FR-012)
+    conversation_service.add_message(
+        conversation.conversation_id, role="user", content=prompt
+    )
+    current_app.logger.info(f"[STREAM] Added user message to conversation {conversation.conversation_id}")
+
     chat_delay = current_app.config.get("MOCK_CHAT_DELAY", 0.2)
     stream_timeout = current_app.config.get("STREAM_TIMEOUT_SECONDS", 30)
 
-    # Get the streaming generator
-    inner_gen = mock_openai_chat(prompt, image_id, stream=True, delay=chat_delay,
-                                 timeout_seconds=stream_timeout)
+    # Get the streaming generator with history context
+    inner_gen = chat_service.stream_chat(
+        prompt=prompt,
+        image_id=image_id,
+        history=history,
+        delay=chat_delay,
+        timeout_seconds=stream_timeout,
+    )
+
+    # Capture streamed content to add to history after completion
+    streamed_chunks = []
+    full_content_parts = []  # Reconstruct full content from deltas
+
+    # Priority 2: Reconnection support
+    # Check for Last-Event-ID header (SSE reconnection standard)
+    last_event_id = request.headers.get('Last-Event-ID')
+    skip_until_event = None
+
+    if last_event_id:
+        # Client is reconnecting - they want to resume from this event
+        # Format: "conv-{conversation_id}-{event_number}"
+        try:
+            parts = last_event_id.split('-')
+            if len(parts) >= 3 and parts[0] == 'conv':
+                skip_until_event = int(parts[-1])
+        except (ValueError, IndexError):
+            pass  # Invalid format, start from beginning
 
     def guarded_stream():
-        """Wrapper that releases the semaphore when streaming completes or disconnects."""
+        """Wrapper that releases semaphore, captures content, handles backpressure, and supports reconnection."""
+        import time
+        import json
+        from src.utils.logger import setup_logger
+
+        logger = setup_logger(__name__)
+        buffer_size = 0
+        max_buffer_size = 10  # Maximum chunks to buffer before slowing down
+        event_counter = 0  # Track event IDs for reconnection
+
         try:
-            yield from inner_gen
+            for chunk in inner_gen:
+                event_counter += 1
+
+                # Priority 2: Skip events if reconnecting from a specific point
+                if skip_until_event is not None and event_counter <= skip_until_event:
+                    continue  # Skip already-sent events
+
+                # Generate unique event ID for this chunk (Priority 2)
+                event_id = f"conv-{conversation.conversation_id}-{event_counter}"
+
+                # Debug: Log first few chunks to see format
+                if event_counter <= 3:
+                    logger.info(f"[STREAM] Chunk {event_counter}: {chunk[:200]}")
+
+                # Capture content chunks for history
+                # Note: JSON has space after colon: "content": "text" not "content":"text"
+                if '"delta":' in chunk and '"content":' in chunk:
+                    streamed_chunks.append(chunk)
+                    logger.info(f"[STREAM] Captured chunk {event_counter} for history")
+
+                    # Reconstruct full content from delta chunks (Priority 3 fix)
+                    try:
+                        # Parse SSE data line to extract content
+                        if chunk.startswith('data: '):
+                            json_str = chunk[6:].strip()
+                            if json_str and json_str != '[DONE]':
+                                data = json.loads(json_str)
+                                content = data.get('choices', [{}])[0].get('delta', {}).get('content')
+                                if content:
+                                    full_content_parts.append(content)
+                    except (json.JSONDecodeError, KeyError):
+                        pass  # Skip malformed chunks
+
+                # Backpressure handling (Priority 1 fix)
+                buffer_size += 1
+                if buffer_size > max_buffer_size:
+                    # Slow consumer detected - add small delay to prevent overwhelming
+                    time.sleep(0.01)  # 10ms backpressure delay
+                    buffer_size = max(0, buffer_size - 2)  # Reduce buffer assumption
+
+                # Priority 2: Prepend event ID to SSE chunk (SSE standard format)
+                # SSE format: "id: <event-id>\ndata: <payload>\n\n"
+                if chunk.startswith('data: '):
+                    # Add event ID before data line
+                    yield f"id: {event_id}\n"
+
+                yield chunk
+
         finally:
+            # Add assistant response to history after stream completes
+            # Use reconstructed content (Priority 3 fix)
+            logger.info(f"[STREAM] Finalizing stream. full_content_parts count: {len(full_content_parts)}, streamed_chunks count: {len(streamed_chunks)}")
+
+            if full_content_parts:
+                full_content = ''.join(full_content_parts)
+                logger.info(f"[STREAM] Adding assistant message from full_content_parts: {full_content[:100]}...")
+                conversation_service.add_message(
+                    conversation.conversation_id,
+                    role="assistant",
+                    content=full_content,
+                )
+            elif streamed_chunks:
+                # Fallback if content reconstruction failed
+                logger.warning(f"[STREAM] Content reconstruction failed, using placeholder")
+                conversation_service.add_message(
+                    conversation.conversation_id,
+                    role="assistant",
+                    content="[Streamed response - content reconstruction failed]",
+                )
+            else:
+                logger.error(f"[STREAM] No content to save! Both full_content_parts and streamed_chunks are empty")
             semaphore.release()
 
     # Update session

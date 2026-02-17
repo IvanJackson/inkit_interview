@@ -7,6 +7,27 @@ from flask import Flask, jsonify, send_from_directory
 from config import config_by_name
 
 
+def _init_conversation_history(app):
+    """Initialize conversation history service and start cleanup thread."""
+    from src.api.chat import get_conversation_service
+    from src.services.conversation_service import start_cleanup_thread
+
+    # Initialize conversation service (lazy initialization on first request)
+    # The service will be created when first accessed via get_conversation_service()
+
+    # Start background cleanup thread
+    with app.app_context():
+        conversation_service = get_conversation_service()
+        start_cleanup_thread(
+            conversation_service=conversation_service,
+            cleanup_interval_seconds=app.config.get(
+                "HISTORY_CLEANUP_INTERVAL_SECONDS", 3600
+            ),
+            retention_days=app.config.get("HISTORY_RETENTION_DAYS", 30),
+            grace_period_days=app.config.get("HISTORY_GRACE_PERIOD_DAYS", 7),
+        )
+
+
 def create_app(config_name=None):
     """Create and configure the Flask application.
 
@@ -31,6 +52,9 @@ def create_app(config_name=None):
 
     # Register blueprints
     _register_blueprints(app)
+
+    # Initialize conversation history (T011)
+    _init_conversation_history(app)
 
     # Register error handlers
     _register_error_handlers(app)
@@ -69,9 +93,11 @@ def _register_blueprints(app):
     """Register Flask blueprints for API routes."""
     from src.api.upload import upload_bp
     from src.api.chat import chat_bp
+    from src.api.history import history_bp
 
     app.register_blueprint(upload_bp)
     app.register_blueprint(chat_bp)
+    app.register_blueprint(history_bp, url_prefix="/chat")
 
 
 def _register_error_handlers(app):

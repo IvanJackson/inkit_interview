@@ -1,6 +1,6 @@
 """Upload API endpoints."""
 
-from flask import Blueprint, request, jsonify, current_app, make_response
+from flask import Blueprint, request, jsonify, current_app, make_response, send_file
 
 from src.services.image_service import ImageService
 from src.services.mock_openai_service import mock_openai_vision_analysis, mock_openai_chat
@@ -27,15 +27,21 @@ def get_image_service():
     return _image_service
 
 
-def get_session_and_services_from_request(  ):
+def get_session_and_services_from_request():
     """Get session and services from request (avoid circular import)."""
-    from src.api.chat import get_session_service, get_chat_service, get_or_create_session_from_request
+    from src.api.chat import (
+        get_session_service,
+        get_chat_service,
+        get_conversation_service,
+        get_or_create_session_from_request,
+    )
 
     session = get_or_create_session_from_request()
     session_service = get_session_service()
     chat_service = get_chat_service()
+    conversation_service = get_conversation_service()
 
-    return session, session_service, chat_service
+    return session, session_service, chat_service, conversation_service
 
 
 @upload_bp.route("/upload", methods=["POST"])
@@ -134,9 +140,16 @@ def upload_image():
     image.vision_analysis = vision_result["output"][0]["content"][0]["text"]
 
     # Get session and update with current image
-    session, session_service, chat_service = get_session_and_services_from_request()
+    session, session_service, chat_service, conversation_service = (
+        get_session_and_services_from_request()
+    )
     session.current_image_id = image.id
     session_service.update_session(session)
+
+    # Create conversation for this image (T008)
+    conversation = conversation_service.get_or_create_conversation(
+        image_id=image.id, session_id=session.session_id
+    )
 
     # Process any queued requests for this image
     def process_chat_callback(chat_request):
@@ -268,3 +281,44 @@ def confirm_upload():
             "message": "Image confirmed as corrupted. Please upload a new image.",
             "suggested_action": "re-upload",
         }), 200
+
+
+@upload_bp.route("/images/<image_id>", methods=["GET"])
+def get_image(image_id):
+    """Retrieve an uploaded image by ID.
+
+    Args:
+        image_id: UUID of the image
+
+    Returns:
+        200: Image file
+        404: Image not found
+    """
+    image_service = get_image_service()
+    image = image_service.get_image(image_id)
+
+    if not image:
+        return jsonify(
+            format_error_response(
+                message="Image not found",
+                error_type="invalid_request_error",
+                code="not_found",
+            )
+        ), 404
+
+    # Return the image file
+    try:
+        return send_file(
+            image.file_path,
+            mimetype=f'image/{image.format.lower()}',
+            as_attachment=False,
+            download_name=image.filename
+        )
+    except FileNotFoundError:
+        return jsonify(
+            format_error_response(
+                message="Image file not found on server",
+                error_type="api_error",
+                code="file_not_found",
+            )
+        ), 404

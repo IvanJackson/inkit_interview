@@ -41,6 +41,13 @@ class Config:
     MAX_STREAMING_CONNECTIONS = 50  # Max concurrent SSE connections
     STREAM_TIMEOUT_SECONDS = 30  # Max duration of a single stream
 
+    # Conversation History (Question 3)
+    HISTORY_RETENTION_DAYS = 30  # Delete conversations older than this
+    HISTORY_GRACE_PERIOD_DAYS = 7  # Keep active conversations this many additional days
+    HISTORY_CLEANUP_INTERVAL_SECONDS = 3600  # Run cleanup every hour
+    HISTORY_MAX_MESSAGES = 50  # Max messages to include in AI context
+    HISTORY_MAX_TOKENS = 10_000  # Max tokens to include in AI context
+
     # Silly excuses for upload-in-progress
     SILLY_EXCUSES = [
         "I went to the bathroom, be right back!",

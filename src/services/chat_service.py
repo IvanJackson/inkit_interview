@@ -199,3 +199,58 @@ class ChatService:
         return (
             "This looks like a different topic - would you like to start a new conversation?"
         )
+
+    def chat(
+        self,
+        prompt: str,
+        image_id: Optional[str] = None,
+        history: Optional[list] = None,
+        delay: float = 0.2,
+    ) -> dict:
+        """Generate chat response with optional conversation history.
+
+        Args:
+            prompt: User's chat prompt
+            image_id: ID of image being discussed (None for text-only)
+            history: Optional conversation history in OpenAI messages format
+            delay: Simulated processing delay
+
+        Returns:
+            OpenAI-compatible chat completion response
+        """
+        from src.services.mock_openai_service import mock_openai_chat
+
+        return mock_openai_chat(
+            prompt=prompt, image_id=image_id, history=history, stream=False, delay=delay
+        )
+
+    def stream_chat(
+        self,
+        prompt: str,
+        image_id: Optional[str] = None,
+        history: Optional[list] = None,
+        delay: float = 0.2,
+        timeout_seconds: float = 30,
+    ):
+        """Generate streaming chat response with optional conversation history.
+
+        Args:
+            prompt: User's chat prompt
+            image_id: ID of image being discussed (None for text-only)
+            history: Optional conversation history in OpenAI messages format
+            delay: Simulated processing delay
+            timeout_seconds: Max stream duration
+
+        Returns:
+            Generator yielding SSE-formatted chunks
+        """
+        from src.services.mock_openai_service import mock_openai_chat
+
+        return mock_openai_chat(
+            prompt=prompt,
+            image_id=image_id,
+            history=history,
+            stream=True,
+            delay=delay,
+            timeout_seconds=timeout_seconds,
+        )

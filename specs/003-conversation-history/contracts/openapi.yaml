@@ -1,0 +1,358 @@
+openapi: 3.0.3
+info:
+  title: Visual Assistant API - Conversation History
+  description: |
+    API contracts for the conversation history feature (Question 3).
+    Extends the existing Visual Assistant API with history recording,
+    context injection, and a dedicated history retrieval endpoint.
+  version: 0.3.0
+
+servers:
+  - url: http://localhost:5001
+    description: Local development server
+
+paths:
+  /chat/history:
+    get:
+      summary: Retrieve conversation history
+      description: |
+        Returns conversation history filtered by image_id, session_id, or both.
+        At least one filter parameter must be provided. Results are ordered by
+        last_activity descending (most recent first).
+      operationId: getChatHistory
+      tags:
+        - Conversation History
+      parameters:
+        - name: image_id
+          in: query
+          required: false
+          description: Filter conversations by image ID
+          schema:
+            type: string
+            format: uuid
+            example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: session_id
+          in: query
+          required: false
+          description: Filter conversations by session ID
+          schema:
+            type: string
+            format: uuid
+            example: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of conversations to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+            example: 10
+      responses:
+        "200":
+          description: Conversation history retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoryResponse"
+              example:
+                conversations:
+                  - conversation_id: "conv-550e8400-e29b-41d4-a716-446655440000"
+                    image_id: "550e8400-e29b-41d4-a716-446655440000"
+                    session_id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+                    created_at: "2026-02-16T10:00:00Z"
+                    last_activity: "2026-02-16T10:05:30Z"
+                    messages:
+                      - message_id: "msg-001"
+                        role: "user"
+                        content: "What do you see in this image?"
+                        created_at: "2026-02-16T10:00:00Z"
+                        token_count: 14
+                      - message_id: "msg-002"
+                        role: "assistant"
+                        content: "I see a landscape with rolling hills..."
+                        created_at: "2026-02-16T10:00:02Z"
+                        token_count: 120
+                count: 1
+        "400":
+          description: Missing required filter parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error:
+                  message: "At least one of image_id or session_id is required"
+                  type: "invalid_request_error"
+                  param: null
+                  code: "missing_filter"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /chat:
+    post:
+      summary: Chat about an uploaded image (with history)
+      description: |
+        Send a chat message about an uploaded image. This endpoint now records
+        all messages (user and assistant) to conversation history and injects
+        truncated history context (last 50 messages or 10,000 tokens) into the
+        prompt for multi-turn dialogue support.
+
+        History recording uses graceful degradation: if history operations fail,
+        the chat request still proceeds normally.
+      operationId: chat
+      tags:
+        - Chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prompt
+              properties:
+                prompt:
+                  type: string
+                  description: User's text question or prompt
+                  minLength: 1
+                  maxLength: 10000
+                  example: "What colors do you see in this image?"
+                image_id:
+                  type: string
+                  format: uuid
+                  description: Optional image ID override (uses session's current image if omitted)
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        "200":
+          description: Chat completion response (OpenAI-compatible format)
+          content:
+            application/json:
+              schema:
+                type: object
+                description: OpenAI-compatible chat completion response
+        "202":
+          description: Request queued (image upload in progress, silly excuse returned)
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          description: Invalid request (missing prompt, invalid input)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /chat/stream:
+    post:
+      summary: Stream a chat response using Server-Sent Events (with history)
+      description: |
+        Stream a chat response about an uploaded image via SSE. This endpoint now
+        records all messages (user and assistant) to conversation history and injects
+        truncated history context (last 50 messages or 10,000 tokens) into the
+        prompt for multi-turn dialogue support.
+
+        The full streamed response is captured and recorded to history after the
+        stream completes. History recording uses graceful degradation: if history
+        operations fail, the stream still proceeds normally.
+      operationId: chatStream
+      tags:
+        - Chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prompt
+              properties:
+                prompt:
+                  type: string
+                  description: User's text question or prompt
+                  minLength: 1
+                  maxLength: 10000
+                  example: "Describe the composition of this photo"
+                image_id:
+                  type: string
+                  format: uuid
+                  description: Optional image ID override
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+      responses:
+        "200":
+          description: SSE stream of chat completion chunks
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Server-Sent Events stream. Each event is a JSON chunk in
+                  OpenAI-compatible streaming format. Stream terminates with
+                  `data: [DONE]`.
+        "202":
+          description: Image upload in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Too many active streaming connections
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    Conversation:
+      type: object
+      required:
+        - conversation_id
+        - session_id
+        - created_at
+        - last_activity
+        - messages
+      properties:
+        conversation_id:
+          type: string
+          format: uuid
+          description: Unique conversation identifier
+          example: "conv-550e8400-e29b-41d4-a716-446655440000"
+        image_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Image being discussed (null for text-only conversations)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        session_id:
+          type: string
+          format: uuid
+          description: Session that owns this conversation
+          example: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        created_at:
+          type: string
+          format: date-time
+          description: Conversation creation timestamp (UTC)
+          example: "2026-02-16T10:00:00Z"
+        last_activity:
+          type: string
+          format: date-time
+          description: Most recent message timestamp (UTC)
+          example: "2026-02-16T10:05:30Z"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+          description: Messages in chronological order
+
+    Message:
+      type: object
+      required:
+        - message_id
+        - role
+        - content
+        - created_at
+        - token_count
+      properties:
+        message_id:
+          type: string
+          format: uuid
+          description: Unique message identifier
+          example: "msg-550e8400-e29b-41d4-a716-446655440000"
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+          description: Message sender role
+          example: "user"
+        content:
+          type: string
+          maxLength: 50000
+          description: Message text content
+          example: "What do you see in this image?"
+        created_at:
+          type: string
+          format: date-time
+          description: Message creation timestamp (UTC)
+          example: "2026-02-16T10:00:00Z"
+        token_count:
+          type: integer
+          minimum: 0
+          description: Estimated token count (word_count * 2)
+          example: 14
+
+    HistoryResponse:
+      type: object
+      required:
+        - conversations
+        - count
+      properties:
+        conversations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Conversation"
+          description: List of conversations matching the filter criteria
+        count:
+          type: integer
+          minimum: 0
+          description: Total number of conversations returned
+          example: 3
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - message
+            - type
+            - code
+          properties:
+            message:
+              type: string
+              description: Human-readable error message
+              example: "At least one of image_id or session_id is required"
+            type:
+              type: string
+              enum:
+                - invalid_request_error
+                - rate_limit_exceeded
+                - api_error
+              description: Error type category
+              example: "invalid_request_error"
+            param:
+              type: string
+              nullable: true
+              description: Parameter that caused the error (if applicable)
+              example: "image_id"
+            code:
+              type: string
+              description: Machine-readable error code
+              example: "missing_filter"
