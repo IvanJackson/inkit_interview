@@ -1,0 +1,99 @@
+=== API Response Evidence ===
+Upload Endpoint:
+Request: POST /upload with test image
+Status Code: 200
+Response Body: {
+  "analysis": {
+    "background": false,
+    "billing": {
+      "payer": "developer"
+    },
+    "completed_at": 1771391096.0,
+    "conversation": null,
+    "created_at": 1771391096.0,
+    "error": null,
+    "frequency_penalty": 0.0,
+    "id": "resp_0293d6ffb29f4db4a937fba474b452be",
+    "incomplete_details": null,
+    "instructions": null,
+    "max_output_tokens": null,
+    "max_tool_calls": null,
+    "metadata": {},
+    "model": "gpt-4-vision-preview",
+    "object": "response",
+    "output": [
+      {
+        "content": [
+          {
+            "annotations": [],
+            "logprobs": [],
+            "text": "A sports/action photograph freezing peak motion\u2014athletes in mid-air, muscles taut, and expressions of focus or exertion captured with clinical clarity\u2014while background motion blur or compressed perspective conveys speed and context. Timing is everything: the decisive shutter click captures a critical instant such as a jump, twist, or collision, preserving the physical narrative of effort and precision. High shutter speed renders motion crisply, while contrast and color saturation accentuate uniforms, skin tones, and equipment details to emphasize intensity and athleticism.",
+            "type": "output_text"
+          }
+        ],
+        "id": "msg_9315351f54de46c89c9abff1bad0ca02",
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "parallel_tool_calls": true,
+    "presence_penalty": 0.0,
+    "previous_response_id": null,
+    "prompt": null,
+    "prompt_cache_key": null,
+    "prompt_cache_retention": null,
+    "reasoning": {
+      "effort": null,
+      "generate_summary": null,
+      "summary": null
+    },
+    "safety_identifier": null,
+    "service_tier": "default",
+    "status": "completed",
+    "store": true,
+    "temperature": 1.0,
+    "text": {
+      "format": {
+        "type": "text"
+      },
+      "verbosity": "medium"
+    },
+    "tool_choice": "auto",
+    "tools": [],
+    "top_logprobs": 0,
+    "top_p": 1.0,
+    "truncation": "disabled",
+    "usage": {
+      "input_tokens": 100,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 158,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 258
+    },
+    "user": null
+  },
+  "filename": "test.jpg",
+  "format": "JPEG",
+  "height": 100,
+  "image_id": "9cc047b9-d9f1-4266-94af-4c87acd7e90c",
+  "size_bytes": 0,
+  "uploaded_at": "2026-02-18T05:04:56.820891",
+  "width": 100
+}
+Image ID Generated: 9cc047b9-d9f1-4266-94af-4c87acd7e90c
+Session ID: None
+
+Chat Endpoint:
+Status Code: 200
+Content-Type: text/event-stream; charset=utf-8
+First 5 streaming chunks:
+Chunk 1: {"id": "chatcmpl-ac81d6c833c549b295fd93e8", "object": "chat.completion.chunk", "created": 1771391096...
+Chunk 2: {"id": "chatcmpl-ac81d6c833c549b295fd93e8", "object": "chat.completion.chunk", "created": 1771391096...
+Chunk 3: {"id": "chatcmpl-ac81d6c833c549b295fd93e8", "object": "chat.completion.chunk", "created": 1771391096...
+Chunk 4: {"id": "chatcmpl-ac81d6c833c549b295fd93e8", "object": "chat.completion.chunk", "created": 1771391096...
+Chunk 5: {"id": "chatcmpl-ac81d6c833c549b295fd93e8", "object": "chat.completion.chunk", "created": 1771391096...

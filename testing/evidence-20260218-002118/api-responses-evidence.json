@@ -1,0 +1,6 @@
+=== API Response Evidence ===
+Upload Endpoint:
+Request: POST /upload with test image
+Argument expected for the -c option
+usage: /Users/ivanjacksonrivera/.local/share/virtualenvs/candidate_files-BzTKLQWV/bin/python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...
+Try `python -h' for more information.

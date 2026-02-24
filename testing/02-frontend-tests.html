@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend Tests - Visual Assistant</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        .test-case { margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 4px; }
+        .test-result { margin: 5px 0; }
+        .pass { color: #28a745; }
+        .fail { color: #dc3545; }
+        .ui-test { background: #e3f2fd; color: white; padding: 10px; border-radius: 4px; margin: 10px 0; }
+        button { background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0056b3; }
+        #results { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>🌐 Frontend Tests</h1>
+    <p>These tests validate frontend functionality. Some require manual interaction.</p>
+
+    <div class="test-section">
+        <h2>Test 1: Image Upload UI</h2>
+        <div class="test-case">
+            <p>🌐 <strong>Manual Test:</strong> Upload an image using the main interface</p>
+            <ol>
+                <li>Open main app at http://localhost:5001</li>
+                <li>Click the paperclip icon or drag & drop an image</li>
+                <li>Verify you see the upload preview and metadata</li>
+                <li>Check browser console for any errors</li>
+            </ol>
+            <div class="test-result">
+                <span class="pass">✅ Expected:</span> Image preview, metadata display, streaming analysis
+                <span class="fail">❌ Issues:</span> No preview, console errors, upload failures
+            </div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test 2: New Image Conversation</h3>
+            <p>🌐 <strong>Manual Test:</strong> Verify new conversation behavior</p>
+            <ol>
+                <li>Upload first image and send a message</li>
+                <li>Upload a second image without sending a message</li>
+                <li>Verify you see "🆕 Uploading a new image will start a fresh conversation thread"</li>
+                <li>Verify the first conversation appears in history</li>
+            </ol>
+            <div class="test-result">
+                <span class="pass">✅ Expected:</span> Clear messaging about new conversation, history preservation
+                <span class="fail">❌ Issues:</span> No warning message, conversation lost
+            </div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test 3: Chat Without Image</h3>
+            <p>🌐 <strong>Manual Test:</strong> Try to chat without uploading image</p>
+            <ol>
+                <li>Open the app without uploading any image</li>
+                <li>Type a message and try to send</li>
+                <li>Verify you see error message about requiring image</li>
+            </ol>
+            <div class="test-result">
+                <span class="pass">✅ Expected:</span> "Please upload an image to start a conversation"
+                <span class="fail">❌ Issues:</span> Message sends without image, no error shown
+            </div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test 4: Streaming Display</h3>
+            <p>🌐 <strong>Manual Test:</strong> Verify streaming text appears in real-time</p>
+            <ol>
+                <li>Open browser developer console (F12)</li>
+                <li>Upload an image and send a message</li>
+                <li>Watch console for "SSE Chunk:" and "Delta content:" messages</li>
+                <li>Verify text appears word by word in the chat bubble</li>
+            </ol>
+            <div class="test-result">
+                <span class="pass">✅ Expected:</span> Console logs showing chunks, text appearing progressively
+                <span class="fail">❌ Issues:</span> No console logs, text appears all at once, invisible text
+            </div>
+        </div>
+
+        <div class="test-case">
+            <h3>Test 5: History Panel</h3>
+            <p>🌐 <strong>Manual Test:</strong> Test conversation history functionality</p>
+            <ol>
+                <li>Have multiple conversations with different images</li>
+                <li>Click the 📚 History button</li>
+                <li>Verify you see all conversations (up to 100)</li>
+                <li>Click on a past conversation to load it</li>
+                <li>Verify the correct image and messages appear</li>
+            </ol>
+            <div class="test-result">
+                <span class="pass">✅ Expected:</span> All conversations visible, correct loading
+                <span class="fail">❌ Issues:</span> Missing conversations, broken loading, wrong image
+            </div>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🔧 Automated Frontend Tests</h2>
+        <div class="ui-test">
+            <h3>Test 6: SSE Format Validation</h3>
+            <button onclick="testSSEFormat()">Test SSE Format</button>
+            <div id="sse-results"></div>
+        </div>
+
+        <div class="ui-test">
+            <h3>Test 7: Console Logging</h3>
+            <button onclick="testConsoleLogging()">Test Console Logs</button>
+            <div id="console-results"></div>
+        </div>
+    </div>
+
+    <div id="results">
+        <h2>📊 Test Results Summary</h2>
+        <div id="summary">Run tests to see results here...</div>
+    </div>
+
+    <script>
+        let testResults = {};
+
+        async function testSSEFormat() {
+            const resultsDiv = document.getElementById('sse-results');
+            resultsDiv.innerHTML = 'Testing SSE format...';
+            
+            try {
+                // Test streaming format
+                const response = await fetch('/chat/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: 'Test SSE format',
+                        image_id: 'test-image-id'
+                    }),
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let chunkCount = 0;
+                let hasCorrectFormat = true;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            chunkCount++;
+                            const payload = line.slice(6);
+                            if (payload === '[DONE]') continue;
+                            
+                            try {
+                                const chunk = JSON.parse(payload);
+                                
+                                // Validate OpenAI format
+                                if (!chunk.id || !chunk.object || !chunk.choices) {
+                                    hasCorrectFormat = false;
+                                    console.error('Format error:', chunk);
+                                }
+                                
+                                if (chunk.choices && chunk.choices[0] && chunk.choices[0].delta) {
+                                    console.log(`✅ Chunk ${chunkCount}: Valid format with delta`);
+                                }
+                            } catch (e) {
+                                hasCorrectFormat = false;
+                                console.error('JSON parse error:', e);
+                            }
+                        }
+                    }
+                }
+
+                resultsDiv.innerHTML = `
+                    <h4>📡 SSE Format Test Results:</h4>
+                    <p><strong>Chunks received:</strong> ${chunkCount}</p>
+                    <p><strong>Format validation:</strong> ${hasCorrectFormat ? '✅ PASS' : '❌ FAIL'}</p>
+                    <p><strong>Check console for detailed logs</strong></p>
+                `;
+
+                testResults.sseFormat = hasCorrectFormat;
+
+            } catch (error) {
+                resultsDiv.innerHTML = `<p style="color: red;">❌ SSE Test Failed: ${error.message}</p>`;
+                testResults.sseFormat = false;
+            }
+        }
+
+        async function testConsoleLogging() {
+            const resultsDiv = document.getElementById('console-results');
+            resultsDiv.innerHTML = 'Testing console logging...';
+            
+            // Test if console.log is working
+            const originalLog = console.log;
+            let logCount = 0;
+            
+            console.log = function(...args) {
+                logCount++;
+                originalLog.apply(console, args);
+            };
+            
+            // Trigger a console log
+            console.log('🧪 Console logging test - this should appear in console');
+            
+            setTimeout(() => {
+                // Restore original console.log
+                console.log = originalLog;
+                
+                resultsDiv.innerHTML = `
+                    <h4>📝 Console Logging Test Results:</h4>
+                    <p><strong>Log count:</strong> ${logCount}</p>
+                    <p><strong>Test message logged:</strong> ${logCount > 0 ? '✅ YES' : '❌ NO'}</p>
+                `;
+                
+                testResults.consoleLogging = logCount > 0;
+            }, 100);
+        }
+
+        function updateSummary() {
+            const summaryDiv = document.getElementById('summary');
+            const passed = Object.values(testResults).filter(r => r === true).length;
+            const total = Object.keys(testResults).length;
+            
+            summaryDiv.innerHTML = `
+                <h3>📊 Test Summary:</h3>
+                <p><strong>Tests Passed:</strong> ${passed}/${total}</p>
+                <p><strong>Success Rate:</strong> ${total > 0 ? Math.round((passed/total) * 100) : 0}%</p>
+                <div style="margin-top: 10px;">
+                    ${Object.entries(testResults).map(([test, result]) => 
+                        `<div style="margin: 5px 0;">
+                            <strong>${test}:</strong> 
+                            <span style="color: ${result ? '#28a745' : '#dc3545'}">
+                                ${result ? '✅ PASS' : '❌ FAIL'}
+                            </span>
+                        </div>`
+                    ).join('')}
+                </div>
+            `;
+        }
+
+        // Auto-update summary when results change
+        const originalUpdateSummary = updateSummary;
+        updateSummary = function() {
+            originalUpdateSummary();
+        };
+    </script>
+</body>
+</html>

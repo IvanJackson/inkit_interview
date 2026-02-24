@@ -1,0 +1,99 @@
+=== API Response Evidence ===
+Upload Endpoint:
+Request: POST /upload with test image
+Status Code: 200
+Response Body: {
+  "analysis": {
+    "background": false,
+    "billing": {
+      "payer": "developer"
+    },
+    "completed_at": 1771390808.0,
+    "conversation": null,
+    "created_at": 1771390808.0,
+    "error": null,
+    "frequency_penalty": 0.0,
+    "id": "resp_322f4fb6660e44f5a1f7897626135738",
+    "incomplete_details": null,
+    "instructions": null,
+    "max_output_tokens": null,
+    "max_tool_calls": null,
+    "metadata": {},
+    "model": "gpt-4-vision-preview",
+    "object": "response",
+    "output": [
+      {
+        "content": [
+          {
+            "annotations": [],
+            "logprobs": [],
+            "text": "A cozy interior scene bathed in golden hour light that slips through mullioned windows, falling across textured fabrics, worn wood, and carefully placed objects to produce an atmosphere of lived-in warmth. Dust motes drift in beams of light, ceramics show finger marks of past use, and textiles are layered to suggest comfort and familiarity. The composition often includes a seated figure or an inviting corner\u2014an armchair with a folded blanket, a cup leaving a faint ring\u2014creating an intimate narrative that evokes memory, domestic ritual, and slow afternoons.",
+            "type": "output_text"
+          }
+        ],
+        "id": "msg_a9803039dee04673b5cf178470c9b160",
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "parallel_tool_calls": true,
+    "presence_penalty": 0.0,
+    "previous_response_id": null,
+    "prompt": null,
+    "prompt_cache_key": null,
+    "prompt_cache_retention": null,
+    "reasoning": {
+      "effort": null,
+      "generate_summary": null,
+      "summary": null
+    },
+    "safety_identifier": null,
+    "service_tier": "default",
+    "status": "completed",
+    "store": true,
+    "temperature": 1.0,
+    "text": {
+      "format": {
+        "type": "text"
+      },
+      "verbosity": "medium"
+    },
+    "tool_choice": "auto",
+    "tools": [],
+    "top_logprobs": 0,
+    "top_p": 1.0,
+    "truncation": "disabled",
+    "usage": {
+      "input_tokens": 100,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 174,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 274
+    },
+    "user": null
+  },
+  "filename": "test.jpg",
+  "format": "JPEG",
+  "height": 100,
+  "image_id": "3cbe9f71-84e1-4327-ac68-59d46e5b1430",
+  "size_bytes": 0,
+  "uploaded_at": "2026-02-18T05:00:08.716038",
+  "width": 100
+}
+Image ID Generated: 3cbe9f71-84e1-4327-ac68-59d46e5b1430
+Session ID: None
+
+Chat Endpoint:
+Status Code: 200
+Content-Type: text/event-stream; charset=utf-8
+First 5 streaming chunks:
+Chunk 1: {"id": "chatcmpl-eb8dd566c58b45a69b885504", "object": "chat.completion.chunk", "created": 1771390808...
+Chunk 2: {"id": "chatcmpl-eb8dd566c58b45a69b885504", "object": "chat.completion.chunk", "created": 1771390808...
+Chunk 3: {"id": "chatcmpl-eb8dd566c58b45a69b885504", "object": "chat.completion.chunk", "created": 1771390808...
+Chunk 4: {"id": "chatcmpl-eb8dd566c58b45a69b885504", "object": "chat.completion.chunk", "created": 1771390808...
+Chunk 5: {"id": "chatcmpl-eb8dd566c58b45a69b885504", "object": "chat.completion.chunk", "created": 1771390808...

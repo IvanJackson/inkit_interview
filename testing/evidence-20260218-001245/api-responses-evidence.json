@@ -1,0 +1,6 @@
+=== API Response Evidence ===
+Upload Endpoint:
+Request: POST /upload with test image
+Argument expected for the -c option
+usage: /Library/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python [option] ... [-c cmd | -m mod | file | -] [arg] ...
+Try `python -h' for more information.

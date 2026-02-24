@@ -1,0 +1,99 @@
+=== API Response Evidence ===
+Upload Endpoint:
+Request: POST /upload with test image
+Status Code: 200
+Response Body: {
+  "analysis": {
+    "background": false,
+    "billing": {
+      "payer": "developer"
+    },
+    "completed_at": 1771389750.0,
+    "conversation": null,
+    "created_at": 1771389750.0,
+    "error": null,
+    "frequency_penalty": 0.0,
+    "id": "resp_056807f78ec8411e9cc98c624f25e243",
+    "incomplete_details": null,
+    "instructions": null,
+    "max_output_tokens": null,
+    "max_tool_calls": null,
+    "metadata": {},
+    "model": "gpt-4-vision-preview",
+    "object": "response",
+    "output": [
+      {
+        "content": [
+          {
+            "annotations": [],
+            "logprobs": [],
+            "text": "A sun-drenched outdoor scene where emerald foliage frames a winding dirt path that meanders through a small meadow; golden shafts of afternoon light pierce the leaf canopy, creating dappled patterns across the trail and illuminating clusters of wildflowers whose petals catch the light. The air seems warm and still, with hints of pollen and fresh-cut grass; insects hover briefly in sunlit pockets while distant trees form a layered backdrop of deep greens and soft silhouettes. The scene suggests a quiet, inviting place for a slow walk, with textured bark, scattered leaf litter, and occasional sunbeams making the scene feel alive and intimate.",
+            "type": "output_text"
+          }
+        ],
+        "id": "msg_e88c6fc5793d48b68f224a16c6491f2d",
+        "role": "assistant",
+        "status": "completed",
+        "type": "message"
+      }
+    ],
+    "parallel_tool_calls": true,
+    "presence_penalty": 0.0,
+    "previous_response_id": null,
+    "prompt": null,
+    "prompt_cache_key": null,
+    "prompt_cache_retention": null,
+    "reasoning": {
+      "effort": null,
+      "generate_summary": null,
+      "summary": null
+    },
+    "safety_identifier": null,
+    "service_tier": "default",
+    "status": "completed",
+    "store": true,
+    "temperature": 1.0,
+    "text": {
+      "format": {
+        "type": "text"
+      },
+      "verbosity": "medium"
+    },
+    "tool_choice": "auto",
+    "tools": [],
+    "top_logprobs": 0,
+    "top_p": 1.0,
+    "truncation": "disabled",
+    "usage": {
+      "input_tokens": 100,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens": 204,
+      "output_tokens_details": {
+        "reasoning_tokens": 0
+      },
+      "total_tokens": 304
+    },
+    "user": null
+  },
+  "filename": "test.jpg",
+  "format": "JPEG",
+  "height": 100,
+  "image_id": "6e3ac73f-e08c-4cce-856e-2845de52bce7",
+  "size_bytes": 0,
+  "uploaded_at": "2026-02-18T04:42:30.817635",
+  "width": 100
+}
+Image ID Generated: 6e3ac73f-e08c-4cce-856e-2845de52bce7
+Session ID: None
+
+Chat Endpoint:
+Status Code: 200
+Content-Type: text/event-stream; charset=utf-8
+First 5 streaming chunks:
+Chunk 1: {"id": "chatcmpl-6f9b9963b2fd4dde81309892", "object": "chat.completion.chunk", "created": 1771389750...
+Chunk 2: {"id": "chatcmpl-6f9b9963b2fd4dde81309892", "object": "chat.completion.chunk", "created": 1771389750...
+Chunk 3: {"id": "chatcmpl-6f9b9963b2fd4dde81309892", "object": "chat.completion.chunk", "created": 1771389750...
+Chunk 4: {"id": "chatcmpl-6f9b9963b2fd4dde81309892", "object": "chat.completion.chunk", "created": 1771389750...
+Chunk 5: {"id": "chatcmpl-6f9b9963b2fd4dde81309892", "object": "chat.completion.chunk", "created": 1771389750...

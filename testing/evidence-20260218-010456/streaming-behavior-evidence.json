@@ -1,0 +1,23 @@
+=== Streaming Behavior Evidence ===
+Streaming Analysis:
+Timing Analysis:
+Chunk 1: {
+  "id": "chatcmpl-b24d587fa8584989ab030233",
+  "object": "chat.completion.chunk",
+  "created": 1771391099,
+  "model": "gpt-4-vision-preview",
+  "cho...
+Chunk 2: {
+  "id": "chatcmpl-b24d587fa8584989ab030233",
+  "object": "chat.completion.chunk",
+  "created": 1771391099,
+  "model": "gpt-4-vision-preview",
+  "cho...
+Chunk 3: {
+  "id": "chatcmpl-b24d587fa8584989ab030233",
+  "object": "chat.completion.chunk",
+  "created": 1771391099,
+  "model": "gpt-4-vision-preview",
+  "cho...
+Average chunk interval: 0.028s
+OpenAI Compliance Rate: 98.8% (83/84 chunks)
